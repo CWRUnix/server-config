@@ -34,6 +34,7 @@
       {
         devShells = {
           default = pkgs.mkShell {
+            SOPS_AGE_KEY_FILE = "key.txt";
             packages = with pkgs; [
               nil
               nixd
