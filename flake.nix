@@ -9,6 +9,9 @@
     disko.url = "github:nix-community/disko/latest";
     disko.inputs.nixpkgs.follows = "nixpkgs";
 
+    sops-nix.url = "github:Mic92/sops-nix";
+    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
+
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -18,6 +21,7 @@
       self,
       nixpkgs,
       disko,
+      sops-nix,
       flake-utils,
       proxmox-nixos,
       ...
@@ -33,6 +37,8 @@
             packages = with pkgs; [
               nil
               nixd
+              sops
+              age
             ];
           };
         };
@@ -43,6 +49,7 @@
             system = "x86_64-linux";
             modules = [
               disko.nixosModules.disko
+              sops-nix.nixosModules.sops
               ./nixos
               proxmox-nixos.nixosModules.proxmox-ve
             ];
