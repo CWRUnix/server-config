@@ -5,16 +5,19 @@
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     proxmox-nixos.url = "github:SaumonNet/proxmox-nixos";
-    treefmt-nix = {
-      url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+
+    disko.url = "github:nix-community/disko/latest";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
+
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      disko,
       flake-utils,
       proxmox-nixos,
       ...
@@ -35,23 +38,13 @@
         };
         nixosConfigurations = rec {
           default = server;
-          server = nixpkgs.lib.nixosSystem rec {
+          server = nixpkgs.lib.nixosSystem {
+            specialArgs = { inherit inputs; };
             system = "x86_64-linux";
             modules = [
+              disko.nixosModules.disko
+              ./nixos
               proxmox-nixos.nixosModules.proxmox-ve
-              (
-                { pkgs, lib, ... }:
-                {
-                  services.proxmox-ve = {
-                    enable = true;
-                    ipAddress = "192.168.0.1";
-                  };
-
-                  nixpkgs.overlays = [
-                    proxmox-nixos.overlays.${system}
-                  ];
-                }
-              )
             ];
           };
         };
