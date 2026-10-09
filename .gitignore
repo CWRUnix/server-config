@@ -1,0 +1,5 @@
+*key.txt
+.direnv
+result
+_decrypted.yaml
+zeus-vm.qcow2
