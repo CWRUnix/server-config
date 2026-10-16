@@ -30,6 +30,17 @@
     impermanence = {
       url = "github:nix-community/impermanence";
     };
+
+    # Prebuilt nix-index database for comma / command-not-found (members
+    # shouldn't have to build the index themselves).
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # The club Discord bot (self-service /reset-password etc.), running in
+    # its own container — see nixos/containers/discord-bot.nix.
+    cwrunix-bot.url = "github:CWRUnix/cwrunix-bot";
   };
 
   outputs =
@@ -43,8 +54,16 @@
         inputs.nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = { inherit inputs; };
-          inherit modules;
+          modules = [ inputs.nix-index-database.nixosModules.nix-index ] ++ modules;
         };
+
+      # The PXE/iPXE installer for zeus' hardware (no USB stick needed) —
+      # see netboot/. Built per-host-system below as .#netboot-dir.
+      netbootSystem = inputs.nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = { inherit inputs; };
+        modules = [ ./netboot ];
+      };
     in
     inputs.flake-utils.lib.eachDefaultSystem (
       system:
@@ -52,6 +71,46 @@
         pkgs = import inputs.nixpkgs { inherit system; };
       in
       {
+        packages.proxy-image = self.nixosConfigurations.proxy.config.system.build.image;
+
+        # TFTP root for the tethered netboot of zeus' hardware:
+        #   nix build .#netboot-dir
+        #   sudo nix run .#pxe-server -- <iface> ./result
+        packages.netboot-dir = pkgs.symlinkJoin {
+          name = "netboot-tftp-dir";
+          paths = with netbootSystem.config.system.build; [
+            kernel # bzImage
+            netbootRamdisk # initrd (carries the whole closure)
+            (netbootIpxeScript.overrideAttrs (_: {
+              # Chainload via HTTP from the pxe-server's updog (:9999 on
+              # 192.168.100.1 — the subnet netboot/pxe-server.nix sets up).
+              text = ''
+                #!ipxe
+                kernel http://192.168.100.1:9999/bzImage init=${netbootSystem.config.system.build.toplevel}/init initrd=initrd ${toString netbootSystem.config.boot.kernelParams} ''${cmdline}
+                initrd http://192.168.100.1:9999/initrd
+                boot
+              '';
+            }))
+            pkgs.ipxe # ipxe.efi (+ pxelinux.0 legacy fallback)
+          ];
+          postBuild = ''
+            ln -s $out/netboot.ipxe $out/autoexec.ipxe
+          '';
+        };
+
+        apps.pxe-server = {
+          type = "app";
+          program = "${pkgs.callPackage ./netboot/pxe-server.nix { }}/bin/zeus-pxe-server";
+        };
+
+        # Install .#server onto the netbooted hardware (disko format +
+        # install + sops deploy key staged). Usage:
+        #   nix run .#deploy -- <deploy-age-keyfile> [ssh opts] <host>
+        apps.deploy = {
+          type = "app";
+          program = "${pkgs.callPackage ./deploy.nix { }}/bin/zeus-deploy";
+        };
+
         devShells = {
           default = pkgs.mkShell {
             SOPS_AGE_KEY_FILE = "key.txt";
@@ -61,6 +120,7 @@
               sops
               age
               gnupg
+              opentofu
             ];
           };
         };
@@ -70,7 +130,8 @@
         # injected into the VM over a 9p share so sops secrets decrypt.
         apps.vm =
           let
-            vm = self.nixosConfigurations.vm.config.system.build.vm;
+            vmCfg = self.nixosConfigurations.vm.config;
+            vm = vmCfg.system.build.vm;
           in
           {
             type = "app";
@@ -84,9 +145,12 @@
                 keydir=$(mktemp -d)
                 trap 'rm -rf "$keydir"' EXIT
                 install -m600 ./key.txt "$keydir/key.txt"
-                export QEMU_OPTS="''${QEMU_OPTS:-} -virtfs local,path=$keydir,mount_tag=sopskey,security_model=none"
+                # ACME certs persist across test runs in ./.vm-acme
+                mkdir -p ./.vm-acme
+                export QEMU_OPTS="''${QEMU_OPTS:-} -virtfs local,path=$keydir,mount_tag=sopskey,security_model=none -virtfs local,path=$PWD/.vm-acme,mount_tag=acmedir,security_model=mapped-file"
                 export NIX_DISK_IMAGE="''${NIX_DISK_IMAGE:-$PWD/zeus-vm.qcow2}"
-                exec ${vm}/bin/run-nixos-vm "$@"
+                # the runner name follows the VM's hostname (run-<host>-vm)
+                exec ${vm}/bin/run-${vmCfg.networking.hostName}-vm "$@"
               ''
             );
           };
@@ -127,6 +191,10 @@
           ./nixos
           ./vm.nix
         ];
+
+        # The raw-TCP relay VPS (Linode). Builds a gzipped raw Linode
+        # image via `nix build .#proxy-image`; see proxy/default.nix.
+        proxy = mkSystem [ ./proxy ];
       };
     };
 }

@@ -1,21 +1,22 @@
-{ config, inputs, ... }:
+{ config, inputs, lib, ... }:
 {
   # authentik (IdP) + its LDAP outpost, from the nix-community/authentik-nix
   # flake. Runs in a declarative nixos-container so the host stays barebones.
   #
-  # Reachable as https://authentik.zeus.cwrunix.com via nginx + cloudflared
+  # Reachable as https://authentik-zeus.cwrunix.com via nginx + cloudflared
   # on the host. The LDAP outpost listens on the container's private address
   # only and is consumed by sssd on the host (see nixos/auth/).
   #
-  # Bootstrap checklist (first deploy):
-  #   1. Log in as akadmin (bootstrap password from sops
-  #      "authentik/bootstrap_password").
-  #   2. Create an LDAP provider + an LDAP outpost assigned to it.
-  #   3. Create the bind user "ldapservice" with a strong password; store it
-  #      in sops as "ldap/bind_password".
-  #   4. Store the outpost token in sops as "authentik/ldap_outpost_token".
-  #   5. Add an LDAP property mapping exposing the user attribute
-  #      "ssh_public_key" as "sshPublicKey" so sssd can serve SSH keys.
+  # All configuration (LDAP stack, headscale OIDC, outpost token) is applied
+  # non-interactively by the in-container OpenTofu bootstrap — see
+  # nixos/authentik-bootstrap.nix and tofu/. Only *users* are managed in the
+  # UI (Directory -> Users; set "sshPublicKey" attribute for SSH key login).
+  # Fresh-boot DB migrations can take several minutes on slow disks; the
+  # module's default 1min unit start timeout would SIGTERM the container
+  # mid-migrate and wedge the machined registration ("Machine 'authentik'
+  # already exists").
+  systemd.services."container@authentik".serviceConfig.TimeoutStartSec = lib.mkForce "15min";
+
   containers.authentik = {
     autoStart = true;
     privateNetwork = true;
@@ -32,17 +33,42 @@
         hostPath = config.sops.templates."authentik-ldap-env".path;
         isReadOnly = true;
       };
+      "/run/secrets/authentik-tofu-env" = {
+        hostPath = config.sops.templates."authentik-tofu-env".path;
+        isReadOnly = true;
+      };
     };
 
     config =
       { ... }:
       {
-        imports = [ inputs.authentik-nix.nixosModules.default ];
+        imports = [
+          inputs.authentik-nix.nixosModules.default
+          ../authentik-bootstrap.nix
+        ];
+
+        # DNS: the host's dnsmasq answers on the veth gateway (see
+        # nixos/networking.nix). We can't rely on networking.nameservers +
+        # resolvconf here: the host's resolv.conf is copied over the
+        # container's at prestart and points at host-local resolvers
+        # (quad100) — resolvconf merges muddled past that — so disable
+        # resolvconf and write the file directly at boot.
+        networking.resolvconf.enable = false;
+        systemd.services.container-resolvconf = {
+          description = "Write resolv.conf pointing at the host's dnsmasq";
+          wantedBy = [ "multi-user.target" ];
+          before = [ "network-online.target" ];
+          serviceConfig.Type = "oneshot";
+          script = ''
+            rm -f /etc/resolv.conf
+            printf 'nameserver 10.77.0.1\noptions edns0\n' > /etc/resolv.conf
+          '';
+        };
 
         networking.firewall.allowedTCPPorts = [
           9000 # web UI (plain HTTP; TLS is terminated at cloudflare)
-          389 # LDAP outpost (private veth only, never leaves the host)
-          636 # LDAPS (unused for now)
+          3389 # LDAP outpost (private veth only, never leaves the host)
+          6636 # LDAPS (unused for now)
         ];
 
         services.authentik = {
@@ -52,6 +78,11 @@
             disable_startup_analytics = true;
             disable_update_check = true;
             avatars = "initials";
+            # Base URL system setting (2026.8+, required as of 2026.11).
+            # This env value only *seeds* the setting when empty and never
+            # overwrites an Admin-UI/API value; the tofu provider we pin
+            # (2026.5.2) predates the setting, hence not managed there.
+            web.base_url = "https://authentik-zeus.cwrunix.com";
             # TODO: SMTP, needed for enrollment invites + password resets:
             # email = {
             #   host = "smtp.example.com";

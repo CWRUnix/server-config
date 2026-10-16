@@ -1,0 +1,22 @@
+--- a/app/routes/home.tsx
++++ b/app/routes/home.tsx
+@@ -53,7 +53,9 @@
+       // API unavailable, skip the link picker
+     }
+ 
+-    if (headscaleUsers.length > 0) {
++    // CWRUnix: manual account linking disabled (security) — users are
++    // provisioned with matching emails, so linking is always automatic.
++    if (false) {
+       return { headscaleUsers, status: "needs_link" as const };
+     }
+ 
+@@ -99,7 +101,7 @@
+   const headscaleUserId = formData.get("headscale_user_id")?.toString();
+ 
+   if (headscaleUserId) {
+-    await auth.linkHeadscaleUser(principal.user.id, headscaleUserId);
++    // CWRUnix: manual account linking disabled (security).
+   }
+ 
+   return redirect("/");

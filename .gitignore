@@ -3,3 +3,6 @@
 result
 _decrypted.yaml
 zeus-vm.qcow2
+.vm-acme/
+.vm-containers/
+.vm-acme

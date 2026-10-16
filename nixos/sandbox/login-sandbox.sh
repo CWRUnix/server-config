@@ -11,6 +11,11 @@
 #     home-manager works
 #   * fresh /proc, minimal /dev, tmpfs /tmp, generated minimal /etc
 #   * outbound-only internet via slirp4netns (no host/peer visibility)
+#   * GPU passthrough: /dev/dri (render nodes) + the host's Mesa driver
+#     dir are bound in. nixpkgs' vulkan-loader/libglvnd look in
+#     /run/opengl-driver by default, so any nix-built app gets hardware
+#     Vulkan/GL without knowing anything about our driver setup. Absent
+#     GPU (test VM) -> the -try binds skip silently.
 set -euo pipefail
 
 user="$(id -un)"
@@ -23,7 +28,9 @@ if [ -z "$home" ] || [ ! -d "$home" ]; then
   exit 1
 fi
 
-inner_shell="@sandboxProfile@/bin/bash"
+# Members' login shell is zsh (bash remains available in the profile for
+# scripts and for anyone who prefers it).
+inner_shell="@sandboxProfile@/bin/zsh"
 
 # sshd invokes the login shell either with no args (interactive login) or
 # as `<shell> -c <command>` (ssh host cmd, scp, ...). Both run sandboxed.
@@ -86,7 +93,6 @@ trap cleanup EXIT
   --unshare-uts \
   --unshare-cgroup-try \
   --die-with-parent \
-  --new-session \
   --uid "$uid" \
   --gid "$gid" \
   --clearenv \
@@ -109,6 +115,8 @@ trap cleanup EXIT
   --ro-bind /nix /nix \
   --bind /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
   --bind "$home" "$home" \
+  --dev-bind-try /dev/dri /dev/dri \
+  --ro-bind-try /run/opengl-driver /run/opengl-driver \
   --tmpfs "/run/user/$uid" \
   --ro-bind "$etc/passwd" /etc/passwd \
   --ro-bind "$etc/group" /etc/group \
@@ -120,13 +128,19 @@ trap cleanup EXIT
   --ro-bind-try /run/current-system/sw/lib/locale /usr/lib/locale \
   --symlink @sandboxProfile@/bin/bash /bin/sh \
   --chdir "$home" \
-  -- "$@" &
+  -- "$@" <&0 &
 sandbox_pid=$!
 
 # Outbound-only internet for the sandbox (NAT via 10.0.2.0/24; access to
 # the host's loopback — and thereby host-local and container services —
-# is blocked).
-@slirp4netns@ --mtu=65520 --disable-host-loopback "$sandbox_pid" tap0 &
+# is blocked). Stdout/stderr go to the void: its startup banner would
+# otherwise pollute every login, and holding the ssh channel's stdout
+# open would delay "Connection closed" when the session ends.
+# NB: the sandbox above needs an explicit `<&0` — this script runs
+# non-interactively under sshd, and background jobs in non-interactive
+# shells get stdin redirected from /dev/null by default, which would make
+# an interactive inner shell exit on EOF immediately.
+@slirp4netns@ --mtu=65520 --disable-host-loopback "$sandbox_pid" tap0 >/dev/null 2>&1 &
 slirp_pid=$!
 
 wait "$sandbox_pid"

@@ -7,10 +7,11 @@
   #     layout is only exercised at actual install time)
   #   * the temporary sops age key is injected via a 9p share (the flake
   #     app copies ./key.txt into place and passes the virtfs flag)
-  #   * cloudflared disabled (placeholder credentials), so the tunnel
-  #     ingress is not testable here — use the forwarded ports instead:
-  #       - http://localhost:8080  (nginx; set a Host header of
-  #         authentik.zeus.cwrunix.com / headscale.zeus.cwrunix.com)
+  #   * cloudflared runs with the real credentials, so the tunnel ingress
+  #     IS testable here; nginx is also reachable via forwarded ports:
+  #       - http://localhost:8080  (plain; set a Host header)
+  #       - https://localhost:8443 (TLS; e.g. curl --resolve
+  #         authentik-zeus.cwrunix.com:8443:127.0.0.1 https://...)
   #       - ssh -p 2222 tev@localhost
   imports = [ (modulesPath + "/virtualisation/qemu-vm.nix") ];
 
@@ -33,6 +34,11 @@
       }
       {
         from = "host";
+        host.port = 8443;
+        guest.port = 443;
+      }
+      {
+        from = "host";
         host.port = 2222;
         guest.port = 22;
       }
@@ -52,19 +58,49 @@
         "x-systemd.requires=modprobe@9pnet_virtio.service"
       ];
     };
+
+    # ACME certs persist across test VM rebuilds/wipes via a 9p share with
+    # the host (./.vm-acme). mapped-file keeps VM-side ownership/permissions
+    # (acme:nginx) virtual instead of failing chowns on the host fs.
+    fileSystems."/var/lib/acme" = {
+      device = "acmedir";
+      fsType = "9p";
+      options = [
+        "trans=virtio"
+        "version=9p2000.L"
+        "x-systemd.requires=modprobe@9pnet_virtio.service"
+      ];
+    };
+
+    # NOTE: container state (/var/lib/nixos-containers) is deliberately NOT
+    # shared this way — postgres on 9p proved unreliable (authentik's
+    # settings import races and migrate crash-loops). To carry VM state to
+    # the real server, use a tarball instead (chattr -i is needed because
+    # nixos-containers marks var/empty immutable):
+    #   VM:     sudo systemctl stop container@authentik
+    #           sudo tar cpf - -C /var/lib nixos-containers/authentik > authentik-state.tar
+    #   server: sudo systemctl stop container@authentik 2>/dev/null
+    #           sudo chattr -i /persist/var/lib/nixos-containers/authentik/var/empty 2>/dev/null
+    #           sudo rm -rf /persist/var/lib/nixos-containers/authentik
+    #           sudo tar xpf authentik-state.tar -C /persist/var/lib/nixos-containers/ --strip-components=1
   };
 
   # No real tunnel credentials in the test VM.
-  services.cloudflared.enable = lib.mkForce false;
+  # services.cloudflared.enable = lib.mkForce false;
 
   # No real Cloudflare DNS API token in the test VM either — nginx serves
-  # plain HTTP only.
-  cwrunix.wildcardTls = false;
+  # plain HTTP only if originTls is disabled. With it on, ACME runs against
+  # the Let's Encrypt staging CA (untrusted certs, but exercises issuance):
+  # cwrunix.originTls = false;
+  # security.acme.defaults.server = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
   # TEST ONLY: known password for the admin account inside the throwaway VM
   # ("zeus-test"), so console login and sudo work without real credentials.
   users.users.tev.hashedPassword = lib.mkForce "$6$yxN9qlVzA6vaIx1s$RdC8cIhMesUVzeyWFHz3HpxCshQmeTBIe1VHoVgjDI30LthCzmfNPdAfOZNLnhrqnRgpdVYts/jBIij6.PIyE.";
 
-  # Reach nginx via the forwarded port 8080.
-  networking.firewall.allowedTCPPorts = [ 80 ];
+  # Reach nginx via the forwarded ports 8080 (http) and 8443 (https).
+  networking.firewall.allowedTCPPorts = [
+    80
+    443
+  ];
 }

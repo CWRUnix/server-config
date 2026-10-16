@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 let
   # Read-only toolset available inside every user sandbox. Users extend
   # their own environment on top of this with home-manager (the nix
@@ -8,6 +8,7 @@ let
     name = "cwrunix-sandbox-profile";
     paths = with pkgs; [
       bashInteractive
+      zsh # the members' login shell (login-sandbox.sh)
       coreutils
       findutils
       gnugrep
@@ -28,6 +29,9 @@ let
       nix
       home-manager
       openssh # provides scp/sftp client + scp server mode for transfers into the sandbox
+      # comma with the prebuilt nix-index database baked in (its wrapper
+      # sets NIX_INDEX_DATABASE), so `, foo` works with zero setup.
+      inputs.nix-index-database.packages.${pkgs.stdenv.system}.comma-with-db
     ];
     pathsToLink = [
       "/bin"

@@ -31,6 +31,30 @@
     # (the real NIC name is not known yet).
   };
 
+  # DNS for the containers. The host's resolv.conf is tailscale-managed
+  # (quad100 — MagicDNS — once tailscaled is up; DHCP before that), and the
+  # qemu test VM can't reach public resolvers on UDP/53 through slirp at all.
+  # So: dnsmasq on the host serves DNS to the containers on their veth
+  # gateway addresses, forwarding via the host's own resolv.conf (quad100
+  # when tailscaled is up, DHCP otherwise — both reachable from the host's
+  # namespace). no-hosts: never leak the host's /etc/hosts into containers.
+  services.dnsmasq = {
+    enable = true;
+    # Only serve the containers; never touch the host's own resolver.
+    resolveLocalQueries = false;
+    settings = {
+      listen-address = [
+        "10.77.0.1"
+        "10.77.1.1"
+        "10.77.2.1"
+      ];
+      # No bind-interfaces: the veth gateway addresses only exist once the
+      # containers start, so bind wildcard + filter by listen-address
+      # (the firewall still guards non-ve interfaces anyway).
+      no-hosts = true;
+    };
+  };
+
   networking.timeServers = [
     "0.nixos.pool.ntp.org"
     "1.nixos.pool.ntp.org"

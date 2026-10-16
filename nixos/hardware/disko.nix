@@ -1,13 +1,13 @@
 { ... }:
 {
-  # !!! Fill in the real disk IDs before installation (`ls -l /dev/disk/by-id/`).
+  # Disk IDs from `ls -l /dev/disk/by-id/` on the machine (netboot installer).
   #
   # Layout: ephemeral tmpfs root (see disks.nix); the main disk holds the
   # nix store and /persist (impermanence), the large disk holds /home for
   # remote users.
   disko.devices.disk = {
     main = {
-      device = "/dev/disk/by-id/CHANGE-ME-MAIN";
+      device = "/dev/disk/by-id/nvme-CT500P3PSSD8_25154F625340";
       type = "disk";
       content = {
         type = "gpt";
@@ -55,7 +55,7 @@
     };
 
     large = {
-      device = "/dev/disk/by-id/CHANGE-ME-LARGE";
+      device = "/dev/disk/by-id/ata-ST20000NM007D-3DJ103_ZVT4D32C";
       type = "disk";
       content = {
         type = "gpt";

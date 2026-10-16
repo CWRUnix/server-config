@@ -1,10 +1,7 @@
 keys:
-  # Temporary local key (key.txt). Replaced with real admin + host keys
-  # before this repo is shared.
-  - &deploy age1wjvr43wkwtvuf23ad5h4tr7mkvprsax73rdpf9schz8nz0k2zvrsufajjr
+  - &primary age1aefxw3sz6e34lpj7hdp7f6zpqglx8v8smfflknr5fu5akcacfqfqzfcxxn
 creation_rules:
   - path_regex: secrets\.yaml$
     key_groups:
       - age:
           - *primary
-          - *deploy
