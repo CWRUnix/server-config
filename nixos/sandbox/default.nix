@@ -44,10 +44,11 @@ let
   # /etc/containers. cgroups are DISABLED: the sandbox has no cgroupfs and
   # never should (writable cgroup delegation can't be done safely without
   # host-side privileged helpers), and the user-.slice quotas below remain
-  # the real enforcement either way. Rootless networking nests another
-  # slirp4netns (double NAT) — pasta isn't reachable from a comma-provided
-  # podman (its wrapper only hardcodes runtimes/conmon). Users can override
-  # any of this via ~/.config/containers/ (home is writable, /etc isn't).
+  # the real enforcement either way. Rootless networking is the podman
+  # default (pasta; podman 6 dropped slirp4netns) — the nixpkgs build finds
+  # it via its compiled-in helper dir, and it nests fine inside the
+  # sandbox's own slirp4netns. Users can override any of this via
+  # ~/.config/containers/ (home is writable, /etc isn't).
   containersConfig = pkgs.runCommand "cwrunix-containers-config" { } ''
     mkdir -p $out/etc/containers
     ln -s ${containersConf} $out/etc/containers/containers.conf
@@ -68,17 +69,16 @@ let
     events_logger = "file"
     # only crun supports running with cgroups disabled
     runtime = "crun"
-    network_cmd_path = "${pkgs.slirp4netns}/bin/slirp4netns"
     # the sandbox has no /var/tmp, and "storage" races first-run storage
     # init; stage image copies on the session's tmpfs /tmp (still bounded
     # by the host's per-slice MemoryMax)
     image_copy_tmp_dir = "/tmp"
-    # the stub /sys/fs/cgroup is tmpfs, so podman's probe reports "v1";
-    # cgroups are intentionally disabled, and the warning is just noise
+    # if the read-only cgroup2 slice bind is absent (no logind session),
+    # /sys/fs/cgroup is a tmpfs stub, which podman 5.x reports as "v1";
+    # cgroups are intentionally disabled, so the warning is just noise.
+    # (podman >= 6 instead refuses v1 outright — the slice bind in
+    # login-sandbox.sh exists to satisfy its startup statfs check.)
     env = [ "PODMAN_IGNORE_CGROUPSV1_WARNING=1" ]
-
-    [network]
-    default_rootless_network_cmd = "slirp4netns"
   '';
 
   policyJson = pkgs.writeText "policy.json" ''

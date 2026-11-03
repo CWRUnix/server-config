@@ -28,11 +28,15 @@
 #     the sandbox maps exactly one uid and setuid newuidmap can't work
 #     under bwrap, so root-in-container is the user's own uid outside.
 #   * fresh /proc, minimal /dev, tmpfs /tmp, generated minimal /etc; /sys is
-#     an EMPTY tmpfs with just a /sys/fs/cgroup stub dir — podman statfs()s
-#     it during engine init even with cgroups disabled, and a real (or
-#     host-bound) sysfs buys nothing here. sysfs also can't be mounted in a
-#     user namespace, so a stub is the only option short of exposing the
-#     host's.
+#     an EMPTY tmpfs — sysfs can't be mounted in a user namespace, and the
+#     host's buys nothing here. The one exception: /sys/fs/cgroup is a
+#     read-only bind of the user's OWN systemd slice
+#     (user.slice/user-$uid.slice) when a logind session exists — podman >= 6
+#     fatally refuses to start unless statfs() there reports cgroup2, and a
+#     userns can't mount a fresh cgroup2 ("Mount too revealing"). The bind
+#     exposes nothing beyond the user's own session cgroups, and ro + file
+#     ownership mean no cgroup writes are possible (matching the disabled
+#     cgroups policy; falls back to an empty stub dir if absent).
 #   * outbound-only internet via slirp4netns (no host/peer visibility)
 #   * GPU passthrough: /dev/dri (render nodes) + the host's Mesa driver
 #     dir are bound in — the latter re-sourced through the FUSE mirror like
@@ -166,6 +170,7 @@ trap cleanup EXIT
   --tmpfs /tmp \
   --tmpfs /sys \
   --dir /sys/fs/cgroup \
+  --ro-bind-try "/sys/fs/cgroup/user.slice/user-$uid.slice" /sys/fs/cgroup \
   --dev /dev \
   --dev-bind-try /dev/net/tun /dev/net/tun \
   --dev-bind-try /dev/fuse /dev/fuse \
