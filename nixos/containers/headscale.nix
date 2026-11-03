@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   # headscale coordination server for the club tailnet. Members join via
   # authentik SSO (OIDC). Served at https://headscale-zeus.cwrunix.com via

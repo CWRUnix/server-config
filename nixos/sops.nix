@@ -1,7 +1,9 @@
 { config, lib, ... }:
 let
   tunnelUnits = lib.optionals config.services.cloudflared.enable (
-    map (id: "cloudflared-tunnel-${id}.service") (builtins.attrNames config.services.cloudflared.tunnels)
+    map (id: "cloudflared-tunnel-${id}.service") (
+      builtins.attrNames config.services.cloudflared.tunnels
+    )
   );
   acmeUnits = map (n: "acme-${n}.service") (builtins.attrNames config.security.acme.certs);
 in

@@ -100,7 +100,6 @@ in
     # /var/lib/tailscale. This flips off the (previously enabled) Tailscale
     # SSH pref on already-registered nodes — idempotent, and a harmless
     # no-op on fresh ones (default is off without --ssh).
-    postStart =
-      "${config.services.tailscale.package}/bin/tailscale set --ssh=false || true";
+    postStart = "${config.services.tailscale.package}/bin/tailscale set --ssh=false || true";
   };
 }

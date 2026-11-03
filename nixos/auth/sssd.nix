@@ -102,9 +102,11 @@
         sshd.makeHomeDir = true;
         login.makeHomeDir = true;
       }
-      (lib.genAttrs [ "sshd" "login" "su" "sudo" ] (_: {
-        rules.auth.localuser-gate = gate 11900;
-        rules.account.localuser-gate = gate 10300;
-        rules.password.localuser-gate = gate 10500;
-      }));
+      (
+        lib.genAttrs [ "sshd" "login" "su" "sudo" ] (_: {
+          rules.auth.localuser-gate = gate 11900;
+          rules.account.localuser-gate = gate 10300;
+          rules.password.localuser-gate = gate 10500;
+        })
+      );
 }

@@ -1,4 +1,10 @@
-{ pkgs, lib, config, modulesPath, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  modulesPath,
+  ...
+}:
 # Netboot (PXE/iPXE) installer system for zeus' hardware — we have no USB
 # stick on hand, so the desktop network-boots this off a tethered laptop
 # instead (see netboot/pxe-server.nix and the flake's netboot-dir package
@@ -32,8 +38,7 @@
       PasswordAuthentication = false;
     };
   };
-  users.users.root.openssh.authorizedKeys.keys =
-    config.users.users.tev.openssh.authorizedKeys.keys;
+  users.users.root.openssh.authorizedKeys.keys = config.users.users.tev.openssh.authorizedKeys.keys;
   security.sudo.wheelNeedsPassword = false;
 
   nix.settings.experimental-features = [

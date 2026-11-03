@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 # zeus's side of the raw-TCP relay (see proxy/ and infra/ for the VPS
 # itself):
 #

@@ -1,4 +1,9 @@
-{ config, inputs, lib, ... }:
+{
+  config,
+  inputs,
+  lib,
+  ...
+}:
 {
   # authentik (IdP) + its LDAP outpost, from the nix-community/authentik-nix
   # flake. Runs in a declarative nixos-container so the host stays barebones.

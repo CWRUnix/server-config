@@ -16,7 +16,12 @@
 #
 # Updates after the instance exists:
 #   nixos-rebuild switch --target-host root@<relay-ip> --flake .#proxy
-{ pkgs, lib, modulesPath, ... }:
+{
+  pkgs,
+  lib,
+  modulesPath,
+  ...
+}:
 {
   imports = [
     (modulesPath + "/virtualisation/linode-image.nix")

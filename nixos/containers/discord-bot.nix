@@ -1,4 +1,10 @@
-{ config, lib, pkgs, inputs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
 # CWRUnix Discord bot (separate repo, imported as a flake input — see
 # flake.nix): currently just the self-service /reset-password slash
 # command that mints an authentik recovery link and replies ephemerally.

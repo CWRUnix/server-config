@@ -6,14 +6,17 @@ let
   # Downscale to a 1920-wide webp (~100 KB), dimmed + blurred so the login
   # card stays readable on top of it. The 500px logo is used as-is.
   # Tune to taste: -blur <radius>x<sigma>, -modulate <brightness pct>.
-  brandAssets = pkgs.runCommand "cwrunix-brand-assets" {
-    nativeBuildInputs = [ pkgs.imagemagick ];
-  } ''
-    mkdir -p $out
-    cp ${marketing}/logo/solid-dark-500-logo.png $out/logo.png
-    magick ${marketing}/posters/signs/solid-dark-10000-right.png \
-      -resize 1920x -blur 0x6 -modulate 60,100 -quality 85 $out/bg.webp
-  '';
+  brandAssets =
+    pkgs.runCommand "cwrunix-brand-assets"
+      {
+        nativeBuildInputs = [ pkgs.imagemagick ];
+      }
+      ''
+        mkdir -p $out
+        cp ${marketing}/logo/solid-dark-500-logo.png $out/logo.png
+        magick ${marketing}/posters/signs/solid-dark-10000-right.png \
+          -resize 1920x -blur 0x6 -modulate 60,100 -quality 85 $out/bg.webp
+      '';
 in
 {
   # Serve the club logo + login background next to authentik; the default
