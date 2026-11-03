@@ -6,3 +6,7 @@ zeus-vm.qcow2
 .vm-acme/
 .vm-containers/
 .vm-acme
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl

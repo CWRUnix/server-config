@@ -4,6 +4,12 @@
 #
 # Provider auth comes from the environment (AUTHENTIK_URL / AUTHENTIK_TOKEN,
 # rendered by sops into /run/secrets/authentik-tofu-env).
+#
+# DO NOT `tofu apply` this from a laptop/admin box against the live server:
+# the container-side service owns the apply and keeps its own state (in the
+# container's storage, wiped and re-applied with a fresh DB). An outside
+# apply with a stale local state just fights it ("already exists" 400s).
+# The TF_VAR dance below is for dev/VM testing only.
 
 terraform {
   required_providers {
@@ -400,6 +406,24 @@ resource "authentik_policy_expression" "member-enrollment-username-format" {
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username):
         ak_message("Username must start with a lowercase letter or underscore and contain only lowercase letters, numbers, '-' and '_' (max 32 characters).")
         return False
+    # Names that exist as local system accounts on zeus. An authentik user
+    # with such a name cannot actually log in as the local user (the
+    # pam_localuser gate in nixos/auth/sssd.nix denies them) — reject here
+    # so they find out with a clear message instead of a dead account.
+    # Keep in sync with the host's users (admins + common service users).
+    reserved = {
+        "root", "daemon", "bin", "sys", "adm", "lp", "mail", "uucp",
+        "operator", "nobody", "systemd-network", "systemd-resolve",
+        "systemd-timesync", "systemd-coredump", "systemd-oom",
+        "systemd-logind", "messagebus", "dbus", "polkituser", "nscd",
+        "sshd", "sssd", "nginx", "acme", "dnsmasq", "cloudflared",
+        "authentik", "headscale", "headplane", "discord-bot",
+        # local admin accounts (nixos/admins/):
+        "tev",
+    }
+    if username in reserved:
+        ak_message("That username is reserved on the server. Please choose another one.")
+        return False
     return True
   EOT
 }
@@ -419,6 +443,8 @@ resource "authentik_flow" "member-enrollment" {
   title       = "Welcome to CWRUnix!"
   slug        = "member-enrollment"
   designation = "enrollment"
+  # Club branding, served by nginx on the authentik vhost (nixos/branding.nix).
+  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp"  # flow.background rejects absolute paths; must be a full URL
 }
 
 resource "authentik_flow_stage_binding" "member-enrollment-prompt" {
@@ -578,6 +604,8 @@ resource "authentik_flow" "recovery" {
   title       = "Reset your CWRUnix password"
   slug        = "recovery"
   designation = "recovery"
+  # Club branding, served by nginx on the authentik vhost (nixos/branding.nix).
+  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp"  # flow.background rejects absolute paths; must be a full URL
 }
 
 resource "authentik_flow_stage_binding" "recovery-prompt" {

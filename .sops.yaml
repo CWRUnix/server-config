@@ -1,7 +1,18 @@
 keys:
+  # Tev's laptop (dev) — edit secrets with: sops secrets.yaml
   - &primary age1aefxw3sz6e34lpj7hdp7f6zpqglx8v8smfflknr5fu5akcacfqfqzfcxxn
+  # zeus (server) — /persist/sops-nix/key.txt, staged by deploy.nix.
+  # REQUIRED: without this the server cannot decrypt secrets on a fresh
+  # activation (`sops-install-secrets: 0 successful groups`).
+  - &deploy age1wjvr43wkwtvuf23ad5h4tr7mkvprsax73rdpf9schz8nz0k2zvrsufajjr
+  # zeus again, derived from its persisted SSH host key (sops-nix imports
+  # /etc/ssh/ssh_host_ed25519_key as an age identity automatically) —
+  # belt-and-braces if /persist/sops-nix/key.txt is ever lost.
+  - &deploy-ssh age13saw2m20ez6sjvdr3p92dzl9xz0vdwncrtnvvzasyfgunm2n94pq35tmjn
 creation_rules:
   - path_regex: secrets\.yaml$
     key_groups:
       - age:
           - *primary
+          - *deploy
+          - *deploy-ssh

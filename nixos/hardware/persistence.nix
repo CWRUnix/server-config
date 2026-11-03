@@ -9,6 +9,7 @@
       "/var/lib/sss" # sssd cache (LDAP logins keep working over blips)
       "/var/lib/nixos-containers" # authentik (postgres!) + headscale state
       "/var/lib/tailscale"
+      "/var/lib/headscale-bootstrap" # self-provisioned tailscaled preauth key (nixos/tailscale.nix)
       "/var/lib/acme" # Let's Encrypt certs — re-issuing every boot would hit rate limits
       "/var/lib/systemd" # timers, random seed, ...
       "/var/log/journal"

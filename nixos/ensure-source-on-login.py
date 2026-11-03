@@ -1,4 +1,4 @@
-# Ensures two things on the default (authentik-managed) objects, which have
+# Ensures settings on the default (authentik-managed) objects, which have
 # no stable UUIDs across installs and so can't be imported by tofu
 # wipe-safely — hence these idempotent API patches:
 #
@@ -14,6 +14,10 @@
 #      identification stage's recovery_flow: that button starts the flow
 #      tokenless and would hit an email stage we don't run (no SMTP) —
 #      Discord is the delivery path.
+#   3. Branding: the default brand's logo + the default login flow's
+#      background point at the club assets served by nginx under /branding/
+#      (see nixos/branding.nix). The tofu-managed flows (member-enrollment,
+#      recovery) set their own background directly in tofu.
 #
 # Env (from /run/secrets/authentik-tofu-env): AUTHENTIK_URL, AUTHENTIK_TOKEN.
 import json
@@ -84,3 +88,49 @@ else:
         "flow_recovery": flow_pk,
     })
     print("default brand now designates the recovery flow")
+
+# --- branding: logo + login background --------------------------------------
+# Assets are served by nginx at /branding/ on the authentik vhost (see
+# nixos/branding.nix); relative URLs resolve against the public origin.
+
+# Both branding fields reject absolute paths ("Absolute paths are not
+# allowed") — they must be full URLs, unlike the baked-in /static/ default.
+BRAND_LOGO = "https://authentik-zeus.cwrunix.com/branding/logo.png"
+FLOW_BACKGROUND = "https://authentik-zeus.cwrunix.com/branding/bg.webp"
+
+# The admin top bar caps the logo via the ak-page-navbar component's own
+# CSS variable (default 2.25rem ≈ 36px — unreadably small for the
+# horizontal club logo). authentik has no size/margin settings on brands;
+# custom CSS is the only knob. It is adopted into every component's shadow
+# root, and !important is needed to beat the component's own :host default.
+BRAND_CSS = """
+/* CWRUnix: readable club logo in the admin top bar */
+ak-page-navbar {
+  --ak-c-page-navbar__brand-logo--Height: 4rem !important;
+}
+""".strip()
+
+brand_patch = {}
+if brand.get("branding_logo") != BRAND_LOGO:
+    brand_patch["branding_logo"] = BRAND_LOGO
+if brand.get("branding_custom_css") != BRAND_CSS:
+    brand_patch["branding_custom_css"] = BRAND_CSS
+
+if not brand_patch:
+    print("default brand already has the club logo + css")
+else:
+    api(f"/api/v3/core/brands/{brand['brand_uuid']}/", "PATCH", brand_patch)
+    print(f"default brand patched: {sorted(brand_patch)}")
+
+login_flows = api("/api/v3/flows/instances/?slug=default-authentication-flow")["results"]
+if len(login_flows) != 1:
+    sys.exit("default-authentication-flow not found")
+
+if login_flows[0].get("background") == FLOW_BACKGROUND:
+    print("login flow already has the club background")
+else:
+    # note: flow detail endpoints are keyed by slug, not uuid
+    api("/api/v3/flows/instances/default-authentication-flow/", "PATCH", {
+        "background": FLOW_BACKGROUND,
+    })
+    print("login flow now has the club background")

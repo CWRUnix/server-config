@@ -2,6 +2,7 @@
 {
   imports = [
     ./boot.nix
+    ./branding.nix
     ./cloudflare.nix
     ./localization.nix
     ./networking.nix

@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, lib, ... }:
 {
   # LDAP-backed remote users, served by the authentik LDAP outpost running
   # in the "authentik" nixos-container. Local admin accounts (see
@@ -21,6 +21,10 @@
       domains = authentik
 
       [nss]
+      # Never resolve local system account names via LDAP (defense in
+      # depth; the authoritative guard is the pam_localuser gate below).
+      filter_users = ${lib.concatStringsSep "," (lib.attrNames config.users.users)}
+      filter_groups = ${lib.concatStringsSep "," (lib.attrNames config.users.groups)}
 
       [pam]
 
@@ -73,7 +77,34 @@
   };
 
   # Create /home/<user> on first login (homes live on the large disk).
-  security.pam.services.sshd.makeHomeDir = true;
-  security.pam.services.login.makeHomeDir = true;
   security.pam.makeHomeDir.umask = "0077";
+
+  # Username-collision guard. Without this, an authentik user whose name
+  # matches a LOCAL account (root, tev, ...) can log in with their LDAP
+  # password: pam_sss authenticates them, then NSS resolves the name via
+  # /etc/passwd (files wins over sss) and the session runs AS THE LOCAL
+  # USER. pam_localuser skips the pam_sss lines whenever the name exists
+  # locally, so local names only ever authenticate against their local
+  # (usually absent) password; remote-only names are unaffected. Orders sit
+  # immediately before the pam_sss rules the sssd module injects at fixed
+  # positions (auth 12100, account 10400, password 10900) — skip=1 must land
+  # exactly on pam_sss, verified against the rendered /etc/pam.d/*.
+  security.pam.services =
+    let
+      gate = order: {
+        inherit order;
+        control = "[success=1 default=ignore]";
+        modulePath = "pam_localuser.so";
+      };
+    in
+    lib.recursiveUpdate
+      {
+        sshd.makeHomeDir = true;
+        login.makeHomeDir = true;
+      }
+      (lib.genAttrs [ "sshd" "login" "su" "sudo" ] (_: {
+        rules.auth.localuser-gate = gate 11900;
+        rules.account.localuser-gate = gate 10300;
+        rules.password.localuser-gate = gate 10500;
+      }));
 }

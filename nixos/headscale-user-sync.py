@@ -42,7 +42,9 @@ def main() -> int:
     with urllib.request.urlopen(req, timeout=30) as r:
         ak_users = json.load(r)["results"]
 
-    existing = headscale_json("users", "list")
+    # NOTE: `headscale users list -o json` prints `null` (not []) when the
+    # DB has no users yet (fresh install) — coerce to [].
+    existing = headscale_json("users", "list") or []
     existing_emails = {u.get("email") for u in existing if u.get("email")}
     existing_names = {u.get("name") for u in existing if u.get("name")}
 

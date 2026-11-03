@@ -83,6 +83,12 @@
     #           sudo chattr -i /persist/var/lib/nixos-containers/authentik/var/empty 2>/dev/null
     #           sudo rm -rf /persist/var/lib/nixos-containers/authentik
     #           sudo tar xpf authentik-state.tar -C /persist/var/lib/nixos-containers/ --strip-components=1
+    #
+    # ACME state: on the real server /var/lib/acme persists via /persist and
+    # fresh certs self-issue; copying the VM's certs is optional. If you do,
+    # copy with trailing slashes / rsync -a — the lego account lives in the
+    # .lego DOTDIR, which a `cp -r *` glob silently skips, and certs without
+    # their account fail with "could not resolve account with key".
   };
 
   # No real tunnel credentials in the test VM.

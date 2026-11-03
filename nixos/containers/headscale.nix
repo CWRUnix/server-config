@@ -23,14 +23,14 @@
   # secret lives in sops as "headscale/oidc_client_secret".
   #
   # Bootstrap checklist (first deploy / after a state wipe):
-  #   1. Create users + keys inside the container and store them in sops:
-  #        headscale users create admin --email admin@cwrunix.com
-  #          (the email MUST match akadmin's authentik bootstrap email so the
-  #          headplane owner account auto-links to it — the manual
-  #          claim-picker is patched out, see headplane-disable-manual-linking.patch)
+  #   1. The "admin" user + the host tailscaled's preauth key provision
+  #      themselves automatically on first boot (headscale-bootstrap-key on
+  #      the host — see nixos/tailscale.nix). The email MUST match akadmin's
+  #      authentik bootstrap email so the headplane owner account auto-links
+  #      to it — the manual claim-picker is patched out, see
+  #      headplane-disable-manual-linking.patch.
+  #      Remaining manual bootstrap:
   #        headscale users create headplane-agent   # used by the headplane agent
-  #        headscale preauthkeys create --user admin --reusable --expiration 8760h
-  #          -> sops "headscale/preauth_key"   (see nixos/tailscale.nix)
   #        headscale apikeys create --expiration 8760h
   #          -> sops "headplane/api_key"
   #   2. Members then onboard through headplane (authentik SSO) or by doing

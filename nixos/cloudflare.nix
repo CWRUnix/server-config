@@ -81,6 +81,12 @@ in
       Type = "oneshot";
       RemainAfterExit = true;
       LoadCredential = "dns-token:${config.sops.secrets."cloudflare/dns_api_token".path}";
+      # The campus LAN can take minutes to pass traffic after link-up
+      # (seen on first boot of the real hardware: api.cloudflare.com was
+      # unreachable when this ran). network-online.target isn't enough —
+      # keep retrying.
+      Restart = "on-failure";
+      RestartSec = "30s";
     };
     script = ''
       set -euo pipefail
