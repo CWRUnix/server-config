@@ -57,6 +57,7 @@
     htop
     man-pages
     man-pages-posix
+    kitty
     # `upg` — update zeus to the latest pushed config and switch into it
     # (admins; wheel sudo is passwordless here). Fetches straight from
     # GitHub (the repo is public); --refresh bypasses the fetch cache so
