@@ -139,6 +139,8 @@
               age
               gnupg
               opentofu
+              cloudflared
+              openssl_4_0
             ];
           };
         };

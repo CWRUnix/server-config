@@ -4,15 +4,10 @@ keys:
   # zeus (server) — /persist/sops-nix/key.txt, staged by deploy.nix.
   # REQUIRED: without this the server cannot decrypt secrets on a fresh
   # activation (`sops-install-secrets: 0 successful groups`).
-  - &deploy age1wjvr43wkwtvuf23ad5h4tr7mkvprsax73rdpf9schz8nz0k2zvrsufajjr
-  # zeus again, derived from its persisted SSH host key (sops-nix imports
-  # /etc/ssh/ssh_host_ed25519_key as an age identity automatically) —
-  # belt-and-braces if /persist/sops-nix/key.txt is ever lost.
-  - &deploy-ssh age13saw2m20ez6sjvdr3p92dzl9xz0vdwncrtnvvzasyfgunm2n94pq35tmjn
+  - &deploy age1fv8lr2hkgmgdxmvt9rmfsdh978g6qvc4ve5wcw4xkejemgumqvcqvel6hh
 creation_rules:
   - path_regex: secrets\.yaml$
     key_groups:
       - age:
           - *primary
           - *deploy
-          - *deploy-ssh

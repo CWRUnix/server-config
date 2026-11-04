@@ -1,6 +1,6 @@
 { config, pkgs, ... }:
 let
-  tunnelId = "a3fdbbba-0767-4633-a0d5-7e3b4bfcd465";
+  tunnelId = "c961c294-f5a7-49e0-842b-a855daba33a6";
   # Hostnames the tunnel still SERVES. headscale-zeus stays here as a
   # fallback (browser/WASM flows work through the tunnel); native
   # tailscaled clients can't use it (Cloudflare strips Upgrade on POST)

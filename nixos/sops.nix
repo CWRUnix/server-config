@@ -49,14 +49,9 @@ in
       restartUnits =
         acmeUnits ++ lib.optional config.services.cloudflared.enable "cloudflared-dns-routes.service";
     };
-    # NOTE: headscale/preauth_key is no longer consumed — the host's
-    # tailscaled uses a self-provisioned key (see nixos/tailscale.nix).
-    # The value remains in secrets.yaml only as history.
-    # Both consumed by headplane inside the headscale container (0444 for the
-    # same UID-space reason as headscale/oidc_client_secret above).
-    #   cookie_secret: exactly 32 chars, session cookie signing key.
-    #   api_key: `headscale apikeys create` output; headplane's server-side
-    #     API access + the agent's ephemeral pre-auth key minting.
+    # cookie_secret: exactly 32 chars, session cookie signing key.
+    # api_key: `headscale apikeys create` output; headplane's server-side
+    #   API access + the agent's ephemeral pre-auth key minting.
     "headplane/cookie_secret" = {
       mode = "0444";
       restartUnits = [ "container@headscale.service" ];
