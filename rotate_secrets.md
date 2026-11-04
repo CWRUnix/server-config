@@ -8,8 +8,13 @@ verify each before moving on. All commands run from the repo root.
 - Set values by generation/paste without echoing them:
 
   ```bash
-  # generate in place (history stores the unexpanded command line):
-  set_secret() { sops set secrets.yaml "$1" "$(jq -Rn --arg v "$2" '$v')"; }
+  # generate in place (history stores the unexpanded command line);
+  # the helper refuses empty values so a missing generator (e.g. no
+  # openssl in PATH) can't silently set an EMPTY secret:
+  set_secret() {
+    [ -n "$2" ] || { echo "refusing to set $1 to an EMPTY value" >&2; return 1; }
+    sops set secrets.yaml "$1" "$(jq -Rn --arg v "$2" '$v')"
+  }
   set_secret '["frp"]["token"]' "$(openssl rand -base64 32)"
 
   # paste in without echo/history (space prefix + read -s):
@@ -49,7 +54,7 @@ verify each before moving on. All commands run from the repo root.
 | `frp/token` | random | Phase 1 | pushed to relay by proxy-provision (no-op until Linode exists) |
 | `linode/api_token` | provider console | Phase 3 | none (API auth only; scopes: `images:read_write`, `linodes:read_write`) |
 | `webtty/client_secret` | random | Phase 1 | webtty SSO until tofu converges |
-| `webtty/cookie_secret` | random, 32 bytes base64 | Phase 1 | webtty sessions dropped |
+| `webtty/cookie_secret` | random, **base64URL** of 32 bytes (see Phase 1 note) | Phase 1 | webtty sessions dropped |
 | `sops/mac` | — | auto-managed — skip | — |
 
 ## Phase 1 — self-generated randoms (one deploy)
@@ -62,9 +67,19 @@ set_secret '["ldap"]["bind_password"]'              "$(openssl rand -base64 32)"
 set_secret '["authentik"]["ldap_outpost_token"]'    "$(openssl rand -base64 32)"
 set_secret '["headscale"]["oidc_client_secret"]'    "$(openssl rand -hex 32)"
 set_secret '["webtty"]["client_secret"]'            "$(openssl rand -hex 32)"
-set_secret '["webtty"]["cookie_secret"]'            "$(openssl rand -base64 32)"   # 32 random bytes, base64
+set_secret '["webtty"]["cookie_secret"]'            "$(openssl rand -base64 32 | tr '+/' '-_')"   # base64URL! see below
 set_secret '["headplane"]["cookie_secret"]'         "$(openssl rand -base64 24)"   # exactly 32 chars
 ```
+
+**Why `webtty/cookie_secret` must be base64URL**: oauth2-proxy (≥7.8-ish,
+verified on 7.15.5) validates file-sourced cookie secrets by decoding with
+`base64.RawURLEncoding` — the URL-safe alphabet. A *standard* base64 value
+that happens to contain `+` or `/` fails that decode, oauth2-proxy falls back
+to the raw string, and the service dies with
+`cookie_secret from file must be 16, 24, or 32 bytes ... but is 44 bytes`.
+Whether plain base64 works is a coin flip per generated value — always `tr
+'+/' '-_'`. (No openssl on the machine?
+`python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"`.)
 
 Commit, deploy. Then, **after the in-container tofu run converges**
 (`journalctl -M authentik -u authentik-tofu` on zeus), restart the stragglers
