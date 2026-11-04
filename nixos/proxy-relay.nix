@@ -127,6 +127,9 @@ in
       TF_CLI_CONFIG_FILE = "${cliConfig}";
       TF_IN_AUTOMATION = "1";
       TF_INPUT = "0";
+      # systemd doesn't set HOME for root services; the linode provider
+      # fails resolving its config path without it.
+      HOME = "/root";
       # linode_image upload uses the beta API.
       LINODE_API_VERSION = "v4beta";
     };
