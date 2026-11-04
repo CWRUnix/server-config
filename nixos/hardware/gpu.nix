@@ -18,7 +18,7 @@
   # with the Mesa build and the Vulkan/GL ICDs. nixpkgs' vulkan-loader and
   # libglvnd are patched to look there by default, so any nix-built binary
   # — including ones running in member sandboxes, which bind-mount that
-  # dir (see sandbox/login-sandbox.sh) — finds the GPU drivers without any
+  # dir (see sandbox/ (cwrunix-sandbox)) — finds the GPU drivers without any
   # environment plumbing. This is what makes GPU access driver-agnostic
   # for members: apps just open Vulkan/GL and Mesa handles the rest.
   hardware.graphics.enable = true;
@@ -29,7 +29,7 @@
   # udev hands render nodes to it (headless Vulkan/GL/compute only needs
   # renderD*; card* — display/GBM master — stays with the defaults).
   # Members' sessions pick the group up via sssd initgroups at login; the
-  # sandbox bind-mounts /dev/dri through (see sandbox/login-sandbox.sh).
+  # sandbox bind-mounts /dev/dri through (see sandbox/ (cwrunix-sandbox)).
   # To grant GPU: add the member to the "gpu" group in authentik.
   users.groups.gpu.gid = 2600; # pinned: must match the LDAP side exactly
   services.udev.extraRules = ''

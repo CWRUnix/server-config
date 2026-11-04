@@ -91,13 +91,16 @@
     # their account fail with "could not resolve account with key".
   };
 
-  # No real tunnel credentials in the test VM.
-  # services.cloudflared.enable = lib.mkForce false;
+  # No real tunnel credentials in the test VM: never join the production
+  # tunnel (two connectors would load-balance live traffic into the
+  # throwaway VM), and never touch real Cloudflare DNS records.
+  services.cloudflared.enable = lib.mkForce false;
+  systemd.services.cloudflared-dns-routes.wantedBy = lib.mkForce [ ];
 
   # No real Cloudflare DNS API token in the test VM either — nginx serves
   # plain HTTP only if originTls is disabled. With it on, ACME runs against
   # the Let's Encrypt staging CA (untrusted certs, but exercises issuance):
-  # cwrunix.originTls = false;
+  cwrunix.originTls = lib.mkForce false;
   # security.acme.defaults.server = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
   # TEST ONLY: known password for the admin account inside the throwaway VM

@@ -29,7 +29,7 @@
   system.stateVersion = "25.11";
 
   # zsh is the default shell for everyone (members' forced login-sandbox
-  # shell is set separately in sandbox/login-sandbox.sh — sssd overrides
+  # shell is set separately in sandbox/ (cwrunix-sandbox) — sssd overrides
   # remote users' shells to it).
   programs.zsh.enable = true;
   users.defaultUserShell = pkgs.zsh;

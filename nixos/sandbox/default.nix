@@ -8,7 +8,7 @@ let
     name = "cwrunix-sandbox-profile";
     paths = with pkgs; [
       bashInteractive
-      zsh # the members' login shell (login-sandbox.sh)
+      zsh # the members' login shell (via cwrunix-sandbox)
       coreutils
       findutils
       gnugrep
@@ -32,6 +32,12 @@ let
       # comma with the prebuilt nix-index database baked in (its wrapper
       # sets NIX_INDEX_DATABASE), so `, foo` works with zero setup.
       inputs.nix-index-database.packages.${pkgs.stdenv.system}.comma-with-db
+      # the job-broker client (infrastructure like the newuidmap shim, not
+      # a convenience tool): `cwrunix-job submit -- cmd...`
+      (pkgs.runCommand "cwrunix-job-client" { } ''
+        mkdir -p $out/bin
+        ln -s ${sandboxBins}/bin/cwrunix-job $out/bin/cwrunix-job
+      '')
     ];
     pathsToLink = [
       "/bin"
@@ -73,11 +79,11 @@ let
     # init; stage image copies on the session's tmpfs /tmp (still bounded
     # by the host's per-slice MemoryMax)
     image_copy_tmp_dir = "/tmp"
-    # if the read-only cgroup2 slice bind is absent (no logind session),
+    # the read-only cgroup2 slice bind is absent (no logind session),
     # /sys/fs/cgroup is a tmpfs stub, which podman 5.x reports as "v1";
     # cgroups are intentionally disabled, so the warning is just noise.
-    # (podman >= 6 instead refuses v1 outright — the slice bind in
-    # login-sandbox.sh exists to satisfy its startup statfs check.)
+    # (podman >= 6 instead refuses v1 outright — the slice bind in the
+    # login sandbox exists to satisfy its startup statfs check.)
     env = [ "PODMAN_IGNORE_CGROUPSV1_WARNING=1" ]
   '';
 
@@ -94,35 +100,47 @@ let
     driver = "overlay"
 
     [storage.options]
-    # The sandbox maps exactly one uid/gid (no subuid delegation is possible
-    # under bwrap), so layer files owned by other ids can't be chown'ed;
-    # ignore it — everything lands owned by the container's root (= the
-    # user's own uid outside).
+    # Tolerate layer files owned by unmappable ids: in the single-uid
+    # fallback sandbox they can't be chown'ed, and even in the multi-uid
+    # sandbox an image may reference ids outside the member's range.
     ignore_chown_errors = "true"
   '';
 
-  netnsSetup = pkgs.replaceVars ./netns-setup.sh {
-    bash = pkgs.bash;
-    ip = "${pkgs.iproute2}/bin/ip";
-    bindfs = pkgs.bindfs;
-  };
+  # The sandbox launcher: the cwrunix-sandbox Rust workspace (separate
+  # repo). One unprivileged binary handles the login + inner-setup roles;
+  # cwrunix-subid-map is the only privileged piece (setuid wrapper below).
+  sandboxBins = inputs.cwrunix-sandbox.packages.${pkgs.stdenv.system}.cwrunix-sandbox;
 
-  loginSandbox = pkgs.runCommand "cwrunix-login-sandbox" { } ''
-    mkdir -p $out/bin
-    substitute ${./login-sandbox.sh} $out/bin/login-sandbox \
-      --replace-fail '@bash@' '${pkgs.bash}' \
-      --replace-fail '@bwrap@' '${pkgs.bubblewrap}/bin/bwrap' \
-      --replace-fail '@unshare@' '${pkgs.util-linux}/bin/unshare' \
-      --replace-fail '@slirp4netns@' '${pkgs.slirp4netns}/bin/slirp4netns' \
-      --replace-fail '@netnsSetup@' '${netnsSetup}' \
-      --replace-fail '@containersConfig@' '${containersConfig}' \
-      --replace-fail '@sandboxProfile@' '${sandboxProfile}'
-    chmod +x $out/bin/login-sandbox
+  # /etc/cwrunix/login-sandbox is a thin wrapper pinning the tool paths
+  # (sssd forces remote users' shells to it; see auth/sssd.nix).
+  loginSandbox = pkgs.writeShellScriptBin "cwrunix-login-sandbox" ''
+    exec ${sandboxBins}/bin/cwrunix-sandbox login \
+      --bwrap ${pkgs.bubblewrap}/bin/bwrap \
+      --slirp4netns ${pkgs.slirp4netns}/bin/slirp4netns \
+      --ip ${pkgs.iproute2}/bin/ip \
+      --bindfs ${pkgs.bindfs}/bin/bindfs \
+      --sandbox-profile ${sandboxProfile} \
+      --containers-config ${containersConfig} \
+      --subid-map-bin ${sandboxBins}/bin/cwrunix-subid-map \
+      --systemctl ${pkgs.systemd}/bin/systemctl \
+      --jobs-sock "$XDG_RUNTIME_DIR/cwrunix-jobs.ctl" \
+      "$@"
   '';
 in
 {
   # sssd forces remote users' shells to this path (see auth/sssd.nix).
-  environment.etc."cwrunix/login-sandbox".source = "${loginSandbox}/bin/login-sandbox";
+  environment.etc."cwrunix/login-sandbox".source = "${loginSandbox}/bin/cwrunix-login-sandbox";
+
+  # Setuid root; writes the outer user namespace's full id map for a
+  # member's freshly-unshared session (deterministic per-uid range, target
+  # must be the caller's own unmapped process — see crates/subid-map/).
+  # This is what enables multi-uid rootless containers in the sandbox.
+  security.wrappers.cwrunix-subid-map = {
+    setuid = true;
+    owner = "root";
+    group = "root";
+    source = "${sandboxBins}/bin/cwrunix-subid-map";
+  };
 
   # Handy for admins debugging the sandbox by hand:
   #   sudo -u someuser /etc/cwrunix/login-sandbox
@@ -141,4 +159,51 @@ in
     MemoryMax=8G
     TasksMax=512
   '';
+
+  # Background jobs (cwrunix-job inside the sandbox): a per-user,
+  # socket-activated, STATELESS broker wraps each submitted command in a
+  # fresh login sandbox as a transient user unit. Jobs inherit the
+  # user-.slice quotas above and outlive the session because lingering
+  # keeps the user manager running (enabled at login via pam_exec below).
+  # The broker only ever runs the login wrapper and only ever touches the
+  # caller's own user manager.
+  systemd.user.sockets.cwrunix-jobsd = {
+    description = "CWRUnix job broker socket";
+    socketConfig.ListenStream = "%t/cwrunix-jobs.ctl";
+  };
+  systemd.user.services.cwrunix-jobsd = {
+    description = "CWRUnix job broker";
+    serviceConfig.ExecStart = "${sandboxBins}/bin/cwrunix-jobsd";
+    environment = {
+      CWRUNIX_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
+      CWRUNIX_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      CWRUNIX_LOGIN_SANDBOX = "/etc/cwrunix/login-sandbox";
+    };
+  };
+
+  # Enable lingering for LDAP members at login (root context via pam_exec)
+  # so their user manager — and any scheduled jobs — survives logout. Their
+  # login SESSION is still torn down exactly as before; linger only pins
+  # user@<uid>.service.
+  security.pam.services.login.rules.session.cwrunix-linger = {
+    order = 12500;
+    control = "optional";
+    modulePath = "pam_exec.so";
+    args = [
+      "${
+        pkgs.writeShellApplication {
+          name = "cwrunix-enable-linger";
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.systemd
+          ];
+          text = ''
+            uid=$(id -u "$PAM_USER" 2>/dev/null) || exit 0
+            [ "$uid" -ge 2000 ] && [ "$uid" -lt 12000 ] || exit 0
+            loginctl enable-linger "$PAM_USER" >/dev/null 2>&1 || true
+          '';
+        }
+      }/bin/cwrunix-enable-linger"
+    ];
+  };
 }

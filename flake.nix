@@ -40,12 +40,25 @@
 
     # The club Discord bot (self-service /reset-password etc.), running in
     # its own container — see nixos/containers/discord-bot.nix.
-    cwrunix-bot.url = "github:CWRUnix/cwrunix-bot";
+    cwrunix-bot = {
+      url = "github:CWRUnix/cwrunix-bot";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # The login sandbox launcher + subid-map helper (Rust). Members' forced
+    # shell wraps it — see nixos/sandbox/.
+    cwrunix-sandbox = {
+      url = "github:CWRUnix/sandbox";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # Club branding assets (logos/posters, built by CI). The default package
     # is one derivation with all artifacts; we lift two files out of it for
     # the authentik login page (see nixos/branding.nix).
-    marketing.url = "github:CWRUnix/marketing";
+    marketing = {
+      url = "github:CWRUnix/marketing";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
