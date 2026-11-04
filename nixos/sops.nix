@@ -17,8 +17,6 @@ in
   sops.age.keyFile = "/persist/sops-nix/key.txt";
 
   sops.secrets = {
-    github_token = { };
-
     # Tunnel credentials JSON (from `cloudflared tunnel create`). Restart
     # the tunnel connector when it changes.
     cloudflared-creds = {
