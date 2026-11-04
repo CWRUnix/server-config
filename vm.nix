@@ -97,6 +97,13 @@
   services.cloudflared.enable = lib.mkForce false;
   systemd.services.cloudflared-dns-routes.wantedBy = lib.mkForce [ ];
 
+  # Same reasoning for the Linode relay: the VM decrypts the REAL
+  # linode/api_token (shared sops key), so it could provision a second VPS
+  # and flip the headscale DNS record to it. Never run either service here
+  # (the VM also never gets the proxyImage specialArg — belt and braces).
+  systemd.services.proxy-provision.wantedBy = lib.mkForce [ ];
+  systemd.services.frp-relay.wantedBy = lib.mkForce [ ];
+
   # No real Cloudflare DNS API token in the test VM either — nginx serves
   # plain HTTP only if originTls is disabled. With it on, ACME runs against
   # the Let's Encrypt staging CA (untrusted certs, but exercises issuance):

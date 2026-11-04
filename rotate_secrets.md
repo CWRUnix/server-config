@@ -34,28 +34,28 @@ verify each before moving on. All commands run from the repo root.
 
 ## Inventory
 
-| Secret | Kind | Rotation | Impact window |
-| --- | --- | --- | --- |
-| `github_token` | GitHub PAT | **delete it** — nothing in the repo consumes it, and the current value is legacy-format (pure hex; real PATs are `ghp_…`/`github_pat_…`) | — |
-| `cloudflared-creds` | tunnel creds JSON | **Phase 5** (recreate tunnel) | public ingress blip ~1 min |
-| `authentik/secret_key` | random | Phase 1 | all authentik sessions dropped |
-| `authentik/bootstrap_password` | random | Phase 1 | none (akadmin UI password — record the new one!) |
-| `authentik/ldap_outpost_token` | random | Phase 1 | none (pushed by ensure-outpost-token on container restart) |
-| `authentik/bootstrap_token` | random + API `set_key` | **Phase 2** | bot/tofu blip (minutes) |
-| `ldap/bind_password` | random | Phase 1 | sssd blip, self-heals (cached creds) |
-| `headscale/oidc_client_secret` | random | Phase 1 | headscale OIDC logins until tofu converges |
-| `headscale/preauth_key` | — | **dead, delete it** (unused per sops.nix comment) | — |
-| `cloudflare/dns_api_token` | provider console | **Phase 3** | none if verified before revoke |
-| `headplane/cookie_secret` | random, **exactly 32 chars** | Phase 1 | headplane sessions dropped |
-| `headplane/api_key` | headscale CLI | **Phase 4** | headplane API blip |
-| `discord/client_id`, `guild_id`, `role_id` | identifiers | **not secrets — skip** | — |
-| `discord/client_secret` | provider console | Phase 3 | Discord SSO broken until tofu converges |
-| `discord/bot_token` | provider console | Phase 3 | bot down until deploy |
-| `frp/token` | random | Phase 1 | pushed to relay by proxy-provision (no-op until Linode exists) |
-| `linode/api_token` | provider console | Phase 3 | none (API auth only; scopes: `images:read_write`, `linodes:read_write`) |
-| `webtty/client_secret` | random | Phase 1 | webtty SSO until tofu converges |
-| `webtty/cookie_secret` | random, **base64URL** of 32 bytes (see Phase 1 note) | Phase 1 | webtty sessions dropped |
-| `sops/mac` | — | auto-managed — skip | — |
+| Secret                                     | Kind                                                 | Rotation                                                                                                                                 | Impact window                                                           |
+| ------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `github_token`                             | GitHub PAT                                           | **delete it** — nothing in the repo consumes it, and the current value is legacy-format (pure hex; real PATs are `ghp_…`/`github_pat_…`) | —                                                                       |
+| `cloudflared-creds`                        | tunnel creds JSON                                    | **Phase 5** (recreate tunnel)                                                                                                            | public ingress blip ~1 min                                              |
+| `authentik/secret_key`                     | random                                               | Phase 1                                                                                                                                  | all authentik sessions dropped                                          |
+| `authentik/bootstrap_password`             | random                                               | Phase 1                                                                                                                                  | none (akadmin UI password — record the new one!)                        |
+| `authentik/ldap_outpost_token`             | random                                               | Phase 1                                                                                                                                  | none (pushed by ensure-outpost-token on container restart)              |
+| `authentik/bootstrap_token`                | random + API `set_key`                               | **Phase 2**                                                                                                                              | bot/tofu blip (minutes)                                                 |
+| `ldap/bind_password`                       | random                                               | Phase 1                                                                                                                                  | sssd blip, self-heals (cached creds)                                    |
+| `headscale/oidc_client_secret`             | random                                               | Phase 1                                                                                                                                  | headscale OIDC logins until tofu converges                              |
+| `headscale/preauth_key`                    | —                                                    | **dead, delete it** (unused per sops.nix comment)                                                                                        | —                                                                       |
+| `cloudflare/dns_api_token`                 | provider console                                     | **Phase 3**                                                                                                                              | none if verified before revoke                                          |
+| `headplane/cookie_secret`                  | random, **exactly 32 chars**                         | Phase 1                                                                                                                                  | headplane sessions dropped                                              |
+| `headplane/api_key`                        | headscale CLI                                        | **Phase 4**                                                                                                                              | headplane API blip                                                      |
+| `discord/client_id`, `guild_id`, `role_id` | identifiers                                          | **not secrets — skip**                                                                                                                   | —                                                                       |
+| `discord/client_secret`                    | provider console                                     | Phase 3                                                                                                                                  | Discord SSO broken until tofu converges                                 |
+| `discord/bot_token`                        | provider console                                     | Phase 3                                                                                                                                  | bot down until deploy                                                   |
+| `frp/token`                                | random                                               | Phase 1                                                                                                                                  | pushed to relay by proxy-provision (no-op until Linode exists)          |
+| `linode/api_token`                         | provider console                                     | Phase 3                                                                                                                                  | none (API auth only; scopes: `images:read_write`, `linodes:read_write`) |
+| `webtty/client_secret`                     | random                                               | Phase 1                                                                                                                                  | webtty SSO until tofu converges                                         |
+| `webtty/cookie_secret`                     | random, **base64URL** of 32 bytes (see Phase 1 note) | Phase 1                                                                                                                                  | webtty sessions dropped                                                 |
+| `sops/mac`                                 | —                                                    | auto-managed — skip                                                                                                                      | —                                                                       |
 
 ## Phase 1 — self-generated randoms (one deploy)
 
@@ -73,7 +73,7 @@ set_secret '["headplane"]["cookie_secret"]'         "$(openssl rand -base64 24)"
 
 **Why `webtty/cookie_secret` must be base64URL**: oauth2-proxy (≥7.8-ish,
 verified on 7.15.5) validates file-sourced cookie secrets by decoding with
-`base64.RawURLEncoding` — the URL-safe alphabet. A *standard* base64 value
+`base64.RawURLEncoding` — the URL-safe alphabet. A _standard_ base64 value
 that happens to contain `+` or `/` fails that decode, oauth2-proxy falls back
 to the raw string, and the service dies with
 `cookie_secret from file must be 16, 24, or 32 bytes ... but is 44 bytes`.
@@ -95,7 +95,7 @@ akadmin password, webtty SSO, headplane login, `journalctl -u proxy-provision`
 
 ## Phase 2 — `authentik/bootstrap_token`
 
-`AUTHENTIK_BOOTSTRAP_TOKEN` is only read at authentik's *first* boot; changing
+`AUTHENTIK_BOOTSTRAP_TOKEN` is only read at authentik's _first_ boot; changing
 the env does nothing afterwards. Rotate by forcing the token value via the API
 (same `set_key` pattern as `nixos/ensure-outpost-token.py`):
 
@@ -129,7 +129,7 @@ self-healing on restart.
 
 - **`cloudflare/dns_api_token`**: Cloudflare dashboard → My Profile → API
   Tokens → create with the same scope (Zone.DNS Edit on cwrunix.com), or
-  **Roll** the existing token in place. The token *value* is an opaque string
+  **Roll** the existing token in place. The token _value_ is an opaque string
   shown once (historically 40 chars; newer tokens differ — judge by the
   verify call below, not by length/charset). The UUID shown in the token list
   is the Token ID, NOT a credential. Verify before swapping:
@@ -308,7 +308,7 @@ compromise `secrets.yaml`. Rotation is therefore plain SSH hygiene:
 4. Rotate the RSA host key the same way (`/persist/etc/ssh/ssh_host_rsa_key`),
    reboot, delete the `.bak` files.
 
-Caveat: if the *disk* was exposed rather than just the key file, then
+Caveat: if the _disk_ was exposed rather than just the key file, then
 `/persist/sops-nix/key.txt` is equally compromised — rotate that recipient
 (Cleanup above) and run the full Phase 1–5 secrets rotation.
 

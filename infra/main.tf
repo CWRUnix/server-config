@@ -77,6 +77,12 @@ resource "linode_instance" "relay" {
   type   = "g6-nanode-1"
   image  = linode_image.relay.id
 
+  # NixOS images carry no MBR bootloader (nixpkgs linode-image.nix builds
+  # for Linode's GRUB 2 boot mode: Linode's GRUB reads /boot/grub/grub.cfg
+  # off the disk). The API default kernel (linode/latest-*) would try to
+  # boot the disk with a Linode-side kernel and fail.
+  kernel = "linode/grub2"
+
   # Key-only SSH. root_pass is a throwaway: PasswordAuthentication is off
   # in the image; the Linode API just requires the field at creation.
   root_pass       = var.root_pass

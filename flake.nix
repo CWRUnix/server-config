@@ -68,10 +68,16 @@
     }@inputs:
     let
       mkSystem =
-        modules:
+        {
+          modules,
+          # The relay VPS image (proxy/), so proxy-relay.nix can reference
+          # it straight from the system closure. Only the real server sets
+          # this (the VM must never provision cloud resources).
+          proxyImage ? null,
+        }:
         inputs.nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
+          specialArgs = { inherit inputs proxyImage; };
           modules = [ inputs.nix-index-database.nixosModules.nix-index ] ++ modules;
         };
 
@@ -193,28 +199,37 @@
         default = self.nixosConfigurations.server;
 
         # The real server.
-        server = mkSystem [
-          inputs.disko.nixosModules.disko
-          inputs.sops-nix.nixosModules.sops
-          inputs.impermanence.nixosModules.impermanence
-          ./nixos
-        ];
+        server = mkSystem {
+          # Build the relay image into the server's closure so
+          # proxy-provision.service can reference it directly — no manual
+          # `nix build .#proxy-image` step on zeus.
+          proxyImage = self.nixosConfigurations.proxy.config.system.build.image;
+          modules = [
+            inputs.disko.nixosModules.disko
+            inputs.sops-nix.nixosModules.sops
+            inputs.impermanence.nixosModules.impermanence
+            ./nixos
+          ];
+        };
 
         # Local QEMU test VM: `nix run .#vm`
         # (or: nixos-rebuild build-vm --flake .#vm)
-        vm = mkSystem [
-          # disko is only imported so the `disko.*` options exist; vm.nix
-          # sets disko.enableConfig = false (single throwaway disk).
-          inputs.disko.nixosModules.disko
-          inputs.sops-nix.nixosModules.sops
-          inputs.impermanence.nixosModules.impermanence
-          ./nixos
-          ./vm.nix
-        ];
+        vm = mkSystem {
+          modules = [
+            # disko is only imported so the `disko.*` options exist; vm.nix
+            # sets disko.enableConfig = false (single throwaway disk).
+            inputs.disko.nixosModules.disko
+            inputs.sops-nix.nixosModules.sops
+            inputs.impermanence.nixosModules.impermanence
+            ./nixos
+            ./vm.nix
+          ];
+        };
 
-        # The raw-TCP relay VPS (Linode). Builds a gzipped raw Linode
-        # image via `nix build .#proxy-image`; see proxy/default.nix.
-        proxy = mkSystem [ ./proxy ];
+        # The raw-TCP relay VPS (Linode). Its gzipped raw image is passed to
+        # the server config as proxyImage (see above); build it by hand with
+        # `nix build .#proxy-image`; see proxy/default.nix.
+        proxy = mkSystem { modules = [ ./proxy ]; };
       };
     };
 }

@@ -8,11 +8,12 @@
 # Traffic path: client --TCP/443--> this box --frp--> zeus nginx:443
 # (TLS terminates on zeus as before; this box sees only ciphertext).
 #
-# Build the uploadable Linode image (gzipped raw, ~1 GB):
+# The image (gzipped raw, ~1 GB) is built into the SERVER's closure:
+# flake.nix passes it to .#server as the proxyImage specialArg, and
+# proxy-provision.service on zeus uploads/configures the instance via
+# infra/main.tf. Manual build (fallback path, one-off testing):
 #   nix build .#proxy-image
-# Then place it where proxy-provision.service on zeus expects it:
 #   nix build .#proxy-image --out-link /root/infra-tofu/proxy-image   (on zeus)
-# and the service uploads/configures the instance via infra/main.tf.
 #
 # Updates after the instance exists:
 #   nixos-rebuild switch --target-host root@<relay-ip> --flake .#proxy

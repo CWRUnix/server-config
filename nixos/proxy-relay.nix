@@ -2,6 +2,10 @@
   config,
   pkgs,
   lib,
+  # The built relay image (flake.nix passes it to .#server; null elsewhere,
+  # e.g. the test VM). When set, the image comes straight from the closure;
+  # otherwise the manual /root/infra-tofu/proxy-image path is the fallback.
+  proxyImage ? null,
   ...
 }:
 # zeus's side of the raw-TCP relay (see proxy/ and infra/ for the VPS
@@ -16,11 +20,28 @@
 #     world-readable nix store).
 #
 # The service is intentionally tolerant: with no linode/api_token in sops
-# or no built image at /root/infra-tofu/proxy-image it logs and exits 0
-# (retriggered when the secret changes or on next boot); transient API
-# failures retry every 10 min.
+# it logs and exits 0 (retriggered when the secret changes or on next boot);
+# transient API failures retry every 10 min.
 let
   stateDir = "/root/infra-tofu"; # /root is persisted (hardware/persistence.nix)
+
+  # The image the tofu run uploads. From the closure when the flake passed
+  # proxyImage (the normal path on zeus); the manual state-dir path remains
+  # as a fallback for one-off/custom images.
+  imageSnippet =
+    if proxyImage != null then
+      "img=$(echo ${proxyImage}/*.img.gz)"
+    else
+      ''
+        if [ ! -e "$state/proxy-image" ]; then
+          echo "no relay image at $state/proxy-image yet." >&2
+          echo "build + place it with:" >&2
+          echo "  nix build .#proxy-image --out-link $state/proxy-image" >&2
+          echo "then: systemctl restart proxy-provision" >&2
+          exit 0
+        fi
+        img=$(echo "$state"/proxy-image/*.img.gz)
+      '';
 
   # Same offline dev_overrides pattern as the authentik bootstrap: fetch
   # the provider binaries once at build time, no registry access at
@@ -130,14 +151,7 @@ in
         exit 0
       fi
 
-      if [ ! -e "$state/proxy-image" ]; then
-        echo "no relay image at $state/proxy-image yet." >&2
-        echo "build + place it with:" >&2
-        echo "  nix build .#proxy-image --out-link $state/proxy-image" >&2
-        echo "then: systemctl restart proxy-provision" >&2
-        exit 0
-      fi
-      img=$(echo "$state"/proxy-image/*.img.gz)
+      ${imageSnippet}
 
       # Throwaway root password (SSH-key-only box; the Linode API just
       # requires the field). Generated once, persisted with the state.
