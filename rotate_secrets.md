@@ -93,6 +93,34 @@ Verify: SSH login still works (ldap bind), authentik UI with the **new**
 akadmin password, webtty SSO, headplane login, `journalctl -u proxy-provision`
 (if the relay exists: frp token pushed, `frp-relay` connected).
 
+**`ldap/bind_password` gotcha (bitten once, 2026-11)**: the tofu provider
+*reports* "Modifications complete" for `authentik_user.ldapservice`, but on
+authentik 2026.8.x the password doesn't actually change (write-only field,
+invisible to drift detection — the next apply then reports "No changes"
+while the account still has the old password). Symptom: sssd goes offline
+("Failed to authenticate" binds in the outpost log; `sss_ssh_authorizedkeys`
+returns empty; cached-credential logins keep working, hiding the breakage).
+After any `ldap/bind_password` rotation, force-set it directly and verify:
+
+```bash
+AKTOK=$(sops decrypt --extract '["authentik"]["bootstrap_token"]' secrets.yaml)
+LDPW=$(sops decrypt --extract '["ldap"]["bind_password"]' secrets.yaml)
+# pk of ldapservice (5 at time of writing — confirm via
+# GET /api/v3/core/users/?username=ldapservice):
+curl -fsS -o /dev/null -w '%{http_code}\n' -X POST \
+  "https://authentik-zeus.cwrunix.com/api/v3/core/users/5/set_password/" \
+  -H "Authorization: Bearer $AKTOK" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg p "$LDPW" '{password: $p}')"        # want: 204
+unset AKTOK LDPW
+# on zeus: systemctl restart sssd  (it backs off while offline)
+#   then: sss_ssh_authorizedkeys <some-member-with-keys>  → prints keys
+```
+
+(A durable fix — an `ensure-ldap-password.py` alongside
+`ensure-outpost-token.py` that always force-sets it — is a good idea; the
+same suspicion does NOT apply to the OIDC `client_secret`s, which are normal
+provider-object fields, not the special user-password write path.)
+
 ## Phase 2 — `authentik/bootstrap_token`
 
 `AUTHENTIK_BOOTSTRAP_TOKEN` is only read at authentik's _first_ boot; changing

@@ -150,12 +150,23 @@
               client_secret_path = "/run/secrets/headscale-oidc";
             };
 
-            # ACL policy. Tailscale SSH is ADMIN-ONLY: tailnet identity
-            # replaces OS auth on the target, and the previous
-            # member->member rule let ANY member become ANY non-root OS
-            # user — an auth bypass. Members authenticate with their LDAP
-            # password instead (sshd over the tailnet, or ttyd in the
-            # browser — see nixos/ttyd.nix).
+            # ACL policy. Data plane: members can reach ONLY tag:server nodes
+            # (no member<->member traffic); admins reach everything. New
+            # servers become member-accessible by carrying tag:server — the
+            # host's own preauth key is minted with it (nixos/tailscale.nix),
+            # and zeus's existing node was tagged once by hand:
+            #   nixos-container run headscale -- headscale nodes tag -i <id> tag:server
+            # ("See" means traffic — peers still appear in `tailscale
+            # status`, but are unreachable without a matching rule.)
+            #
+            # Tailscale SSH stays ADMIN-ONLY: tailnet identity replaces OS
+            # auth on the target, and the previous member->member rule let
+            # ANY member become ANY non-root OS user — an auth bypass.
+            # Members authenticate with their LDAP password instead (sshd
+            # over the tailnet, or ttyd in the browser — see nixos/ttyd.nix).
+            # NOTE: tagged nodes are NOT part of autogroup:member, so the
+            # ssh dst lists tag:server explicitly (else admins would lose
+            # Tailscale SSH to servers the moment they get tagged).
             #
             # group:admins lists headscale user identifiers — in 0.29+ these
             # must be email-form ("user@domain"), matching the user's email
@@ -168,14 +179,24 @@
                   "groups": {
                     "group:admins": ["admin@cwrunix.com", "tln32@case.edu"]
                   },
+                  // Who may carry tag:server (admins only). A node tagged
+                  // with a tag it can't own is rejected at assignment time.
+                  "tagOwners": {
+                    "tag:server": ["group:admins"]
+                  },
                   "acls": [
-                    {"action": "accept", "src": ["*"], "dst": ["*:*"]}
+                    // Admins reach everything (zeus's node is owned by the
+                    // admin user, so zeus keeps full visibility).
+                    {"action": "accept", "src": ["group:admins"], "dst": ["*:*"]},
+                    // Everyone else reaches tagged servers and nothing else.
+                    {"action": "accept", "src": ["*"], "dst": ["tag:server:*"]}
                   ],
                   "ssh": [
                     {
                       "action": "accept",
                       "src": ["group:admins"],
-                      "dst": ["autogroup:member"],
+                      // tagged nodes aren't in autogroup:member
+                      "dst": ["autogroup:member", "tag:server"],
                       "users": ["autogroup:nonroot", "root"]
                     }
                   ]

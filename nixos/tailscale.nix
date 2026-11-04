@@ -42,6 +42,12 @@ in
   # container's headscale. Idempotent: skips if the keyfile exists. A key
   # that later expires only affects FRESH registrations (logged-in nodes
   # keep working); delete the keyfile and restart this unit to rotate.
+  #
+  # The key carries tag:server so this host registers as a tagged server
+  # (member-reachable per the headscale ACL policy; tagOwners restrict the
+  # tag to group:admins, whose user "admin" owns this node). Nodes already
+  # registered keep their tags — the tag on zeus's pre-existing node was set
+  # once by hand with `headscale nodes tag`.
   systemd.services.headscale-bootstrap-key = {
     description = "Provision headscale admin user + preauth key for local tailscaled";
     wantedBy = [ "multi-user.target" ];
@@ -79,7 +85,7 @@ in
         uid=$(hs users list -o json | jq -r '[.[]? | select(.name=="admin")] | .[0].id // empty')
       fi
 
-      hs preauthkeys create --user "$uid" --reusable --expiration 8760h -o json \
+      hs preauthkeys create --user "$uid" --reusable --expiration 8760h --tags tag:server -o json \
         | jq -r '.key' > "$keyfile.tmp"
       mv "$keyfile.tmp" "$keyfile"
     '';
