@@ -267,6 +267,58 @@ resource "authentik_application" "webtty" {
   slug              = "webtty"
   protocol_provider = authentik_provider_oauth2.webtty.id
 }
+
+# ---------------------------------------------------------------------------
+# Mail (Stalwart, containers/mail.nix): the webmail at mail-zeus.cwrunix.com
+# signs members in with their club account ("Sign in with SSO") — Bulwark
+# runs a PKCE authorization-code flow straight from the browser, hence a
+# PUBLIC client (no secret). Stalwart then validates the issued access
+# tokens against this provider's issuer/JWKS (its OIDC directory), which is
+# also why the client id ("bulwark-webmail") is Stalwart's accepted
+# audience.
+# ---------------------------------------------------------------------------
+
+resource "authentik_provider_oauth2" "mail" {
+  name               = "mail"
+  client_id          = "bulwark-webmail"
+  client_type        = "public"
+  authorization_flow = data.authentik_flow.default-authorization-implicit.id
+  invalidation_flow  = data.authentik_flow.default-provider-invalidation.id
+  # Same 2026.8 workaround as the headscale provider above. PKCE (S256) is
+  # automatic for public clients.
+  grant_types = [
+    "authorization_code",
+    "refresh_token",
+  ]
+  allowed_redirect_uris = [
+    # Bulwark's SSO callback (one per mounted prefix — it lives at
+    # /webmail). The trailing-slash prefix URI covers Stalwart's own
+    # login-page SSO flow.
+    {
+      matching_mode     = "strict"
+      url               = "https://mail-zeus.cwrunix.com/webmail/oauth/callback"
+      redirect_uri_type = "authorization"
+    },
+    {
+      matching_mode     = "strict"
+      url               = "https://mail-zeus.cwrunix.com/webmail/"
+      redirect_uri_type = "authorization"
+    }
+  ]
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+  signing_key = data.authentik_certificate_key_pair.self-signed.id
+}
+
+resource "authentik_application" "mail" {
+  name              = "Mail"
+  slug              = "mail"
+  protocol_provider = authentik_provider_oauth2.mail.id
+}
+
 # ---------------------------------------------------------------------------
 # Discord SSO: members log in with their Discord account. Two gates:
 #
@@ -418,6 +470,10 @@ resource "authentik_policy_expression" "member-enrollment-username-format" {
         "systemd-logind", "messagebus", "dbus", "polkituser", "nscd",
         "sshd", "sssd", "nginx", "acme", "dnsmasq", "cloudflared",
         "authentik", "headscale", "headplane", "discord-bot",
+        # mail identities managed by the mail container (service account,
+        # role addresses, the admins group) — a member with one of these
+        # usernames would collide with them as an @cwrunix.com address:
+        "noreply", "postmaster", "abuse", "admin", "admins",
         # local admin accounts (nixos/admins/):
         "tev",
     }
@@ -444,7 +500,7 @@ resource "authentik_flow" "member-enrollment" {
   slug        = "member-enrollment"
   designation = "enrollment"
   # Club branding, served by nginx on the authentik vhost (nixos/branding.nix).
-  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp"  # flow.background rejects absolute paths; must be a full URL
+  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp" # flow.background rejects absolute paths; must be a full URL
 }
 
 resource "authentik_flow_stage_binding" "member-enrollment-prompt" {
@@ -568,7 +624,7 @@ resource "authentik_stage_prompt" "recovery" {
 # verification factor, so tokenless identification+reset would let anyone
 # reset ANYONE's password.
 resource "authentik_policy_expression" "recovery-token-required" {
-  name       = "recovery-token-required"
+  name = "recovery-token-required"
   # Minting happens via the admin API (which enforces its own permission);
   # executing happens via the flow executor with the token inside the
   # nested `query` param (the SPA calls /flows/executor/<slug>/?query=
@@ -605,7 +661,7 @@ resource "authentik_flow" "recovery" {
   slug        = "recovery"
   designation = "recovery"
   # Club branding, served by nginx on the authentik vhost (nixos/branding.nix).
-  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp"  # flow.background rejects absolute paths; must be a full URL
+  background = "https://authentik-zeus.cwrunix.com/branding/bg.webp" # flow.background rejects absolute paths; must be a full URL
 }
 
 resource "authentik_flow_stage_binding" "recovery-prompt" {

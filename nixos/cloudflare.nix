@@ -11,6 +11,7 @@ let
     "headscale-zeus.cwrunix.com"
     "headplane-zeus.cwrunix.com"
     "ttyd-zeus.cwrunix.com"
+    "mail-zeus.cwrunix.com"
   ];
   # Hostnames whose DNS the dns-routes service below manages. headscale-
   # zeus is deliberately absent: its record is a grey-cloud A record
@@ -20,6 +21,7 @@ let
     "authentik-zeus.cwrunix.com"
     "headplane-zeus.cwrunix.com"
     "ttyd-zeus.cwrunix.com"
+    "mail-zeus.cwrunix.com"
   ];
 in
 {

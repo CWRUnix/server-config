@@ -88,16 +88,19 @@
             # overwrites an Admin-UI/API value; the tofu provider we pin
             # (2026.5.2) predates the setting, hence not managed there.
             web.base_url = "https://authentik-zeus.cwrunix.com";
-            # TODO: SMTP, needed for enrollment invites + password resets:
-            # email = {
-            #   host = "smtp.example.com";
-            #   port = 587;
-            #   use_tls = true;
-            #   username = "...";
-            #   from = "authentik@zeus.cwrunix.com";
-            # };
-            # (password goes into the environmentFile as
-            #  AUTHENTIK_EMAIL__PASSWORD)
+            # NOTE: no outbound mail (settings.email) yet — not essential
+            # today (tofu/main.tf: "deliberately no email stage"), but
+            # wanted later. Blocker: Stalwart refuses local password
+            # credentials for accounts in the OIDC directory, and app
+            # passwords are server-generated (can't be pre-seeded from
+            # sops). To enable: mint an app password for a service account
+            # (e.g. akadmin or a dedicated club account) via the webmail's
+            # account settings, store it as mail/authentik_password in
+            # secrets.yaml, then set settings.email = { host =
+            # "mail-zeus.cwrunix.com"; port = 465; use_tls = true; ... } —
+            # reaching the container directly over the veth needs SNI
+            # tricks (the cert is for mail.cwrunix.com/mail-zeus...), so
+            # simplest is the nginx-proxied hostnames.
           };
         };
 

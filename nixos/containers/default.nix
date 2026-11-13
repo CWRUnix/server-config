@@ -3,5 +3,6 @@
     ./authentik.nix
     ./discord-bot.nix
     ./headscale.nix
+    ./mail.nix
   ];
 }

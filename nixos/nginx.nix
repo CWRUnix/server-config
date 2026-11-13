@@ -43,6 +43,7 @@ in
       certs."headscale-zeus.cwrunix.com" = acmeHost;
       certs."headplane-zeus.cwrunix.com" = acmeHost;
       certs."ttyd-zeus.cwrunix.com" = acmeHost;
+      certs."mail-zeus.cwrunix.com" = acmeHost;
     };
 
     # Local HTTP(S) router: cloudflared (public, via tunnel) and direct
@@ -54,6 +55,47 @@ in
       recommendedProxySettings = true;
       recommendedOptimisation = true;
       recommendedTlsSettings = tls;
+
+      # The mail webmail needs the real client IP for per-IP auth rate
+      # limits. cloudflared connects from localhost with the visitor
+      # address in CF-Connecting-IP; direct LAN/tailnet clients are their
+      # own source. Stalwart is configured to take the client address from
+      # exactly one XFF entry (containers/mail.nix), so the mail vhost
+      # replaces X-Forwarded-For with this single-entry value.
+      #
+      # $mail_admin_ok guards the mail webadmin/management API: it keys on
+      # the REAL client IP, because every tunnel connection arrives from
+      # cloudflared (127.0.0.1) — an allow-by-$remote_addr list would
+      # wrongly let the whole public internet into /admin.
+      appendHttpConfig = ''
+        # Only localhost peers (cloudflared, or genuine host-local traffic)
+        # may claim a different address via CF-Connecting-IP; everyone else
+        # is their own source address. An empty CF header (no tunnel) means
+        # the localhost peer is the client.
+        map $http_cf_connecting_ip $mail_cf_claim {
+          "" $remote_addr;
+          default $http_cf_connecting_ip;
+        }
+        map $remote_addr $mail_client_ip {
+          default $remote_addr;
+          127.0.0.1 $mail_cf_claim;
+          ::1 $mail_cf_claim;
+        }
+        # Stalwart rejects loopback client claims in XFF (anti-spoofing);
+        # for those, send no XFF at all — it falls back to the (trusted,
+        # host-local) peer address instead.
+        map $mail_client_ip $mail_xff {
+          "127.0.0.1" "";
+          "::1" "";
+          default $mail_client_ip;
+        }
+        geo $mail_client_ip $mail_admin_ok {
+          default 0;
+          127.0.0.1 1;
+          ::1 1;
+          100.64.0.0/10 1; # tailnet
+        }
+      '';
 
       virtualHosts = {
         "authentik-zeus.cwrunix.com" = {
@@ -109,6 +151,88 @@ in
             proxyWebsockets = true;
           };
         };
+
+        # Webmail (Bulwark, hosted by Stalwart at /webmail) + JMAP +
+        # Stalwart's OAuth endpoints, from the mail container. The web
+        # admin (/admin) and the management REST API (/api) are NOT public:
+        # tailnet/localhost only — EXCEPT /api/auth, which the webmail
+        # login flow posts to.
+        "mail-zeus.cwrunix.com" =
+          let
+            # Manual header set: the location-level recommendedProxySettings
+            # include would shadow the single-entry XFF override (a location
+            # with its own proxy_set_header inherits none from the server).
+            # $mail_client_ip is the appendHttpConfig map above. NOTE: an
+            # empty $mail_client_ip (localhost probe, no CF header) sends
+            # NO XFF — Stalwart then 400s by design (missing/loopback XFF
+            # claims are rejected); only real proxy/LAN paths yield a
+            # client IP.
+            proxyHeaders = ''
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $mail_xff;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_set_header X-Forwarded-Host $host;
+              proxy_set_header X-Forwarded-Server $hostname;
+            '';
+            adminGuard = ''
+              if ($mail_admin_ok = 0) { return 403; }
+            '';
+          in
+          {
+            useACMEHost = lib.mkIf tls "mail-zeus.cwrunix.com";
+            addSSL = tls;
+            extraConfig = ''
+              # JMAP uploads (message send with attachments).
+              client_max_body_size 100m;
+            '';
+            locations."/" = {
+              proxyPass = "http://10.77.3.2:8080"; # mail container (stalwart)
+              proxyWebsockets = true;
+              recommendedProxySettings = false;
+              extraConfig = ''
+                ${proxyHeaders}
+                # JMAP push (EventSource) is a long-lived stream.
+                proxy_read_timeout 3600s;
+                proxy_send_timeout 3600s;
+              '';
+            };
+            # Public (unguarded) management-API exceptions — both are part of
+            # the LOGIN flow and are safe to expose (Stalwart rate-limits
+            # anonymous callers itself):
+            #  * /api/auth: password/token login the webmail POSTs to.
+            #  * /api/discover/<address>: the lookup the webmail's login
+            #    page uses to learn whether an address signs in via SSO
+            #    (returns the OIDC endpoints) or with a password. Without
+            #    this the "Sign in with SSO" flow never starts.
+            locations."/api/auth" = {
+              proxyPass = "http://10.77.3.2:8080";
+              recommendedProxySettings = false;
+              extraConfig = proxyHeaders;
+            };
+            locations."/api/discover/" = {
+              proxyPass = "http://10.77.3.2:8080";
+              recommendedProxySettings = false;
+              extraConfig = proxyHeaders;
+            };
+            locations."/api" = {
+              proxyPass = "http://10.77.3.2:8080";
+              recommendedProxySettings = false;
+              extraConfig = ''
+                ${proxyHeaders}
+                ${adminGuard}
+              '';
+            };
+            locations."/admin" = {
+              proxyPass = "http://10.77.3.2:8080";
+              proxyWebsockets = true;
+              recommendedProxySettings = false;
+              extraConfig = ''
+                ${proxyHeaders}
+                ${adminGuard}
+              '';
+            };
+          };
       };
     };
 

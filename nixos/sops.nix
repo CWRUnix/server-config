@@ -42,10 +42,21 @@ in
     };
     # Scoped Cloudflare API token with Zone.DNS edit rights for
     # cwrunix.com, used by the ACME DNS-01 challenge (see nginx.nix) and
-    # for auto-registering tunnel DNS routes (see cloudflare.nix).
+    # for auto-registering tunnel DNS routes (see cloudflare.nix). Also
+    # bind-mounted into the mail container, where Stalwart uses it for its
+    # own ACME DNS-01 and for publishing DKIM records.
     "cloudflare/dns_api_token" = {
       restartUnits =
-        acmeUnits ++ lib.optional config.services.cloudflared.enable "cloudflared-dns-routes.service";
+        acmeUnits
+        ++ lib.optional config.services.cloudflared.enable "cloudflared-dns-routes.service"
+        ++ [ "container@mail.service" ];
+    };
+    # Stalwart fallback admin (webadmin / management API identity used by
+    # the provision + user-sync services). Consumed inside the mail
+    # container via systemd credentials / root-only scripts, so no mode
+    # override is needed.
+    "mail/admin_password" = {
+      restartUnits = [ "container@mail.service" ];
     };
     # cookie_secret: exactly 32 chars, session cookie signing key.
     # api_key: `headscale apikeys create` output; headplane's server-side
@@ -74,7 +85,8 @@ in
     };
     # Linode API token for the self-provisioning raw-TCP relay (see
     # nixos/proxy-relay.nix + infra/). Scopes: images:read_write,
-    # linodes:read_write. Empty until the Linode account exists; the
+    # linodes:read_write, events:read_only, ips:read_write (see infra/main.tf).
+    # Empty until the Linode account exists; the
     # provision service skips (and re-runs on change) while empty.
     "linode/api_token" = {
       restartUnits = [ "proxy-provision.service" ];

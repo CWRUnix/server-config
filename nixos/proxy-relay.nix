@@ -1,7 +1,6 @@
 {
   config,
   pkgs,
-  lib,
   # The built relay image (flake.nix passes it to .#server; null elsewhere,
   # e.g. the test VM). When set, the image comes straight from the closure;
   # otherwise the manual /root/infra-tofu/proxy-image path is the fallback.
@@ -85,6 +84,15 @@ in
   # env file; before the first successful provision the unit fails fast
   # ("Failed to load environment files") and proxy-provision restarts it
   # once it has written the address.
+  #
+  # The mail proxies forward the public mail ports to the Stalwart mail
+  # container (10.77.3.2); proxyProtocolVersion v2 hands Stalwart the real
+  # sender IP (its listeners require the header from this host's veth
+  # address — see containers/mail.nix). The stcp visitor is the OUTBOUND
+  # half: it exposes the VPS's loopback Postfix smarthost as
+  # 10.77.3.1:2587 on the mail container's veth gateway (see
+  # proxy/default.nix), so Stalwart's "relay" route has a static,
+  # host-local next hop.
   services.frp.instances.relay = {
     enable = true;
     role = "client";
@@ -104,6 +112,49 @@ in
           localIP = "127.0.0.1";
           localPort = 443;
           remotePort = 443;
+        }
+        {
+          name = "mail-smtp";
+          type = "tcp";
+          localIP = "10.77.3.2";
+          localPort = 25;
+          remotePort = 25;
+          transport.proxyProtocolVersion = "v2";
+        }
+        {
+          name = "mail-submission";
+          type = "tcp";
+          localIP = "10.77.3.2";
+          localPort = 587;
+          remotePort = 587;
+          transport.proxyProtocolVersion = "v2";
+        }
+        {
+          name = "mail-submissions";
+          type = "tcp";
+          localIP = "10.77.3.2";
+          localPort = 465;
+          remotePort = 465;
+          transport.proxyProtocolVersion = "v2";
+        }
+        {
+          name = "mail-imaps";
+          type = "tcp";
+          localIP = "10.77.3.2";
+          localPort = 993;
+          remotePort = 993;
+          transport.proxyProtocolVersion = "v2";
+        }
+      ];
+      visitors = [
+        {
+          name = "mail-outbound";
+          type = "stcp";
+          serverName = "mail-outbound";
+          # Same shared key as the server side (see proxy/default.nix).
+          secretKey = "{{ .Envs.FRP_TOKEN }}";
+          bindAddr = "10.77.3.1";
+          bindPort = 2587;
         }
       ];
     };
@@ -179,6 +230,32 @@ in
         exit 1
       fi
 
+      # Prune stale zeus-relay images: every image-changing apply uploads a
+      # fresh one, and Linode caps the account's custom images (the 2026-11
+      # pile-up blocked uploads with "Account Image limit reached"). Delete
+      # every zeus-relay image EXCEPT the one tofu state currently tracks
+      # (deleting that one when the image is unchanged would force a
+      # re-upload on every run). Called before apply (guarantees upload
+      # quota) and again after (the pre-apply in-state image goes stale
+      # exactly when the apply replaces it).
+      prune_relay_images() {
+        local current
+        current=$(tofu -chdir="$state/workdir" show -json 2>/dev/null \
+          | jq -r '.values.root_module.resources[]? | select(.address=="linode_image.relay") | .values.id' \
+          || true)
+        local id
+        curl -fsS "https://api.linode.com/v4/images?is_public=false" \
+          -H "Authorization: Bearer $TF_VAR_linode_token" \
+          | jq -r '.data[] | select(.label=="zeus-relay") | .id' \
+          | while read -r id; do
+              if [ -n "$id" ] && [ "$id" != "$current" ]; then
+                curl -fsS -X DELETE "https://api.linode.com/v4/images/$id" \
+                  -H "Authorization: Bearer $TF_VAR_linode_token" > /dev/null \
+                  && echo "pruned stale relay image $id"
+              fi
+            done
+      }
+
       # Remove the legacy tunnel CNAME for headscale-zeus so tofu can
       # create the A record (the dns-routes service only manages the
       # remaining tunnel hostnames; it never deletes).
@@ -194,9 +271,19 @@ in
       export TF_VAR_root_pass="$(cat "$state/root-pass")"
       export TF_VAR_provision_ssh_pubkey="$(cat "$state/provision-key.pub")"
 
+      # One-time migration: state used to live inside the workdir, which
+      # the rsync below deletes on every run (see infra/main.tf's backend
+      # block). Move any pre-fix state to the backend path first.
+      if [ ! -s "$state/terraform.tfstate" ] && [ -s "$state/workdir/terraform.tfstate" ]; then
+        mv "$state/workdir/terraform.tfstate" "$state/terraform.tfstate"
+        echo "migrated tofu state out of the rsync'd workdir"
+      fi
+
       rsync -a --delete ${../infra}/ "$state/workdir/"
       tofu -chdir="$state/workdir" init -input=false -no-color
+      prune_relay_images
       tofu -chdir="$state/workdir" apply -auto-approve -input=false -no-color
+      prune_relay_images
       ip=$(tofu -chdir="$state/workdir" output -raw proxy_ip)
       echo "relay provisioned at $ip"
 
@@ -219,7 +306,7 @@ in
         sleep 10
       done
       printf 'FRP_TOKEN=%s\n' "$FRP_TOKEN" | ssh -i "$state/provision-key" -o StrictHostKeyChecking=accept-new root@"$ip" \
-        'mkdir -p /etc/frp && cat > /etc/frp/frps.env && chmod 600 /etc/frp/frps.env && systemctl restart frp-server'
+        'mkdir -p /etc/frp && cat > /etc/frp/frps.env && chmod 600 /etc/frp/frps.env && systemctl restart frp-server && (systemctl restart frp-mail-outbound || true)'
       echo "relay configured; frpc should now be connected"
     '';
   };

@@ -146,7 +146,7 @@
               gnupg
               opentofu
               cloudflared
-              openssl_4_0
+              openssl_4_1
             ];
           };
         };

@@ -1,4 +1,9 @@
-{ lib, modulesPath, ... }:
+{
+  lib,
+  pkgs,
+  modulesPath,
+  ...
+}:
 {
   # Throwaway QEMU test VM — `nix run .#vm` from the repo root.
   #
@@ -103,6 +108,17 @@
   # (the VM also never gets the proxyImage specialArg — belt and braces).
   systemd.services.proxy-provision.wantedBy = lib.mkForce [ ];
   systemd.services.frp-relay.wantedBy = lib.mkForce [ ];
+
+  # The mail container's Cloudflare token is used for real DNS (ACME
+  # DNS-01 + DKIM record publishing — see nixos/containers/mail.nix), and
+  # the VM decrypts the REAL scoped token via the shared sops key. Feed it
+  # a dummy instead: a bogus token can only fail auth against the API, so
+  # the VM can never issue certs or modify the zone. (Stalwart still runs
+  # its full provision; the ACME/DNS tasks just log errors.)
+  containers.mail.bindMounts."/run/secrets/cloudflare-dns-token" = lib.mkForce {
+    hostPath = toString (pkgs.writeText "cloudflare-dns-token-dummy" "dummy-vm-token");
+    isReadOnly = true;
+  };
 
   # No real Cloudflare DNS API token in the test VM either — nginx serves
   # plain HTTP only if originTls is disabled. With it on, ACME runs against

@@ -122,6 +122,20 @@
                 "1.0.0.1"
                 "9.9.9.9"
               ];
+              # Tailnet clients reach the mail vhost DIRECTLY (bypassing
+              # the cloudflare tunnel): the webadmin/management API
+              # (/admin, /api) is gated on the real client IP and the
+              # tunnel would mask it with the visitor's public address
+              # (nixos/nginx.nix $mail_admin_ok). 100.64.0.1 is zeus
+              # itself; tailscale0 is a trusted interface, and the LE cert
+              # is publicly signed so TLS verifies either way.
+              extra_records = [
+                {
+                  name = "mail-zeus.cwrunix.com";
+                  type = "A";
+                  value = "100.64.0.1";
+                }
+              ];
             };
 
             # Embedded DERP relay as a NAT-traversal fallback. It is served

@@ -47,6 +47,7 @@
         "10.77.0.1"
         "10.77.1.1"
         "10.77.2.1"
+        "10.77.3.1"
       ];
       # No bind-interfaces: the veth gateway addresses only exist once the
       # containers start, so bind wildcard + filter by listen-address

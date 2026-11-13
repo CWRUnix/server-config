@@ -52,9 +52,10 @@ verify each before moving on. All commands run from the repo root.
 | `discord/client_secret`                    | provider console                                     | Phase 3                                                                                                                                  | Discord SSO broken until tofu converges                                 |
 | `discord/bot_token`                        | provider console                                     | Phase 3                                                                                                                                  | bot down until deploy                                                   |
 | `frp/token`                                | random                                               | Phase 1                                                                                                                                  | pushed to relay by proxy-provision (no-op until Linode exists)          |
-| `linode/api_token`                         | provider console                                     | Phase 3                                                                                                                                  | none (API auth only; scopes: `images:read_write`, `linodes:read_write`) |
+| `linode/api_token`                         | provider console                                     | Phase 3                                                                                                                                  | none (API auth only; scopes: `images:read_write`, `linodes:read_write`, `events:read_only`, `ips:read_write`) |
 | `webtty/client_secret`                     | random                                               | Phase 1                                                                                                                                  | webtty SSO until tofu converges                                         |
 | `webtty/cookie_secret`                     | random, **base64URL** of 32 bytes (see Phase 1 note) | Phase 1                                                                                                                                  | webtty sessions dropped                                                 |
+| `mail/admin_password`                      | random                                               | Phase 1                                                                                                                                  | none (stalwart fallback admin; provision/user-sync re-auth seamlessly)  |
 | `sops/mac`                                 | —                                                    | auto-managed — skip                                                                                                                      | —                                                                       |
 
 ## Phase 1 — self-generated randoms (one deploy)
@@ -69,6 +70,7 @@ set_secret '["headscale"]["oidc_client_secret"]'    "$(openssl rand -hex 32)"
 set_secret '["webtty"]["client_secret"]'            "$(openssl rand -hex 32)"
 set_secret '["webtty"]["cookie_secret"]'            "$(openssl rand -base64 32 | tr '+/' '-_')"   # base64URL! see below
 set_secret '["headplane"]["cookie_secret"]'         "$(openssl rand -base64 24)"   # exactly 32 chars
+set_secret '["mail"]["admin_password"]'             "$(openssl rand -base64 32)"
 ```
 
 **Why `webtty/cookie_secret` must be base64URL**: oauth2-proxy (≥7.8-ish,
@@ -94,7 +96,7 @@ akadmin password, webtty SSO, headplane login, `journalctl -u proxy-provision`
 (if the relay exists: frp token pushed, `frp-relay` connected).
 
 **`ldap/bind_password` gotcha (bitten once, 2026-11)**: the tofu provider
-*reports* "Modifications complete" for `authentik_user.ldapservice`, but on
+_reports_ "Modifications complete" for `authentik_user.ldapservice`, but on
 authentik 2026.8.x the password doesn't actually change (write-only field,
 invisible to drift detection — the next apply then reports "No changes"
 while the account still has the old password). Symptom: sssd goes offline
@@ -191,7 +193,10 @@ self-healing on restart.
   out-of-repo workflow uses it, rotate at GitHub → fine-grained PAT.)
 
 - **`linode/api_token`**: Cloud Manager → API Tokens → scopes
-  `images:read_write` + `linodes:read_write`, nothing else → sops → deploy.
+  `images:read_write` + `linodes:read_write` + `events:read_only` +
+  `ips:read_write` (PTR via linode_rdns), nothing else → sops → deploy. (events is needed because the provider's instance
+  resource polls `/v4/account/events` to wait for create/boot/destroy; the
+  first relay *replacement* fails with a 401 without it.)
   `proxy-provision.service` re-runs; tofu apply is a no-op if the relay
   already exists (the token only authenticates the API). Revoke the old token
   after.
