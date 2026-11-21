@@ -354,32 +354,47 @@
               # akadmin a member. (User accounts themselves are NOT
               # provisioned here — no secret values may touch the nix
               # store; the sync service manages them at runtime.)
+              #
+              # Groups can't carry a member list in this plan at all (the
+              # schema has no such field — membership lives on each user's
+              # memberGroupIds), and this set is upsert-only, so group
+              # memberships edited at runtime are never clobbered by
+              # deploys. frep@ is managed that way: mail-user-sync seeds
+              # akadmin as the INITIAL member, after which akadmin runs
+              # the list imperatively (Bulwark).
               Account = {
                 match = [
                   "name"
                   "domainId"
                 ];
-                objects.mail-admins = variant "Group" {
-                  name = "admins";
-                  domainId = "#main-domain";
-                  description = "Club admins; receives postmaster@/abuse@/admin@";
-                  aliases = [
-                    {
-                      enable = true;
-                      name = "postmaster";
-                      domainId = "#main-domain";
-                    }
-                    {
-                      enable = true;
-                      name = "abuse";
-                      domainId = "#main-domain";
-                    }
-                    {
-                      enable = true;
-                      name = "admin";
-                      domainId = "#main-domain";
-                    }
-                  ];
+                objects = {
+                  mail-admins = variant "Group" {
+                    name = "admins";
+                    domainId = "#main-domain";
+                    description = "Club admins; receives postmaster@/abuse@/admin@";
+                    aliases = [
+                      {
+                        enable = true;
+                        name = "postmaster";
+                        domainId = "#main-domain";
+                      }
+                      {
+                        enable = true;
+                        name = "abuse";
+                        domainId = "#main-domain";
+                      }
+                      {
+                        enable = true;
+                        name = "admin";
+                        domainId = "#main-domain";
+                      }
+                    ];
+                  };
+                  frep = variant "Group" {
+                    name = "frep";
+                    domainId = "#main-domain";
+                    description = "Frep mailing list";
+                  };
                 };
               };
             };

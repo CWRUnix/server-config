@@ -13,6 +13,13 @@ aliases land there) — that membership can't be statically provisioned
 because the provision plan lives in the world-readable nix store and the
 sync owns all runtime account state.
 
+Also seeds akadmin as the INITIAL member of the "frep" group (the group
+itself is provisioned in containers/mail.nix). Seed-only: once the group
+has any member, the sync leaves it alone — akadmin manages the list
+imperatively from then on (Bulwark), and neither the provision plan
+(upsert-only, and groups carry no member field anyway) nor this sync
+will clobber those runtime edits.
+
 Note: accounts in an OIDC directory cannot carry local password
 credentials (Stalwart refuses them), and app-password secrets are
 server-generated, so no pre-seeded service-account passwords exist here
@@ -36,6 +43,7 @@ ADMIN_PW_PATH = "/run/secrets/mail-admin"
 
 DOMAIN = "cwrunix.com"
 ADMINS_GROUP = "admins"
+FREP_GROUP = "frep"  # seeded with the club admin once, then imperatively managed
 CLUB_ADMIN = "akadmin"  # gets postmaster@/abuse@/admin@ via the group
 
 JMAP_USING = ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"]
@@ -184,9 +192,41 @@ def main() -> int:
                     ]
                 ],
             )
+            # memberGroupIds is REPLACED wholesale by Account/set — keep
+            # the local copy current so the frep seeding below doesn't
+            # clobber the membership just added.
+            admin["memberGroupIds"] = new_groups
             print(f"added {CLUB_ADMIN!r} to group {ADMINS_GROUP!r}")
     elif not group:
         print(f"WARN: group {ADMINS_GROUP!r} missing (provision not run yet?)", file=sys.stderr)
+
+    # --- frep@: seed akadmin as the initial member -------------------------
+    # Unlike the admins group this is NOT ensured on every run: the group
+    # is managed imperatively (Bulwark) once it has any member, so only a
+    # completely memberless (freshly provisioned) group gets seeded.
+    frep = by_name.get(FREP_GROUP)
+    if frep and admin:
+        members = [
+            a["name"]
+            for a in by_name.values()
+            if frep["id"] in (a.get("memberGroupIds") or {})
+        ]
+        if not members:
+            new_groups = dict(admin.get("memberGroupIds") or {})
+            new_groups[frep["id"]] = True
+            jmap(
+                auth,
+                [
+                    [
+                        "x:Account/set",
+                        {"update": {admin["id"]: {"memberGroupIds": new_groups}}},
+                        "0",
+                    ]
+                ],
+            )
+            print(f"seeded {CLUB_ADMIN!r} as initial member of group {FREP_GROUP!r}")
+    elif not frep:
+        print(f"WARN: group {FREP_GROUP!r} missing (provision not run yet?)", file=sys.stderr)
 
     return 0
 
